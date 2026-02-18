@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SST Satellite Imaging - Tuna Operations</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0d1117; color: #e6edf3; font-family: 'Segoe UI', monospace; user-select: none; }
+        #canvas-container { position: relative; width: 100vw; height: 100vh; background-color: #000; cursor: crosshair; }
+        canvas { display: block; image-rendering: pixelated; } 
+        
+        #hud {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(13, 17, 23, 0.9); border: 1px solid #30363d;
+            padding: 15px; border-radius: 6px; pointer-events: none;
+            font-family: 'Courier New', monospace; min-width: 300px;
+            backdrop-filter: blur(8px); z-index: 10;
+        }
+        .hud-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; }
+        .hud-val { color: #58a6ff; font-weight: bold; }
+        .hud-val.temp { color: #ffab70; font-size: 15px; }
+
+        #profile-panel {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(13, 17, 23, 0.95); border: 1px solid #30363d;
+            padding: 10px; border-radius: 6px; display: none;
+            backdrop-filter: blur(8px); z-index: 10;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        #profile-title { font-size: 12px; color: #8b949e; margin-bottom: 5px; font-weight: bold; text-transform: uppercase; }
+        #profile-stats { font-size: 11px; color: #58a6ff; margin-bottom: 8px; font-family: monospace; }
+        
+        #controls {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 10px; background: rgba(13, 17, 23, 0.95);
+            padding: 8px 16px; border-radius: 30px; border: 1px solid #30363d; z-index: 10;
+        }
+        button {
+            background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+            padding: 6px 14px; border-radius: 15px; cursor: pointer; font-size: 12px; font-weight: 600;
+        }
+        button:hover { background: #30363d; color: #fff; }
+        button.active { background: #1f6feb; border-color: #1f6feb; color: white; }
+        button#btn-clear-run { border-color: #f85149; color: #f85149; display: none; }
+        button#btn-clear-run:hover { background: #b62324; color: white; }
+
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8); color: #fff; padding: 20px; border-radius: 8px;
+            pointer-events: none; text-align: center;
+        }
+        
+        #hint {
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.5); font-size: 11px; pointer-events: none;
+            text-shadow: 0 1px 2px black;
+        }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container">
+    <canvas id="mainCanvas"></canvas>
+    <div id="hint">Double-click to Start/Stop Fishing Run</div>
+</div>
+
+<div id="hud">
+    <div class="hud-row"><span>LAT</span> <span class="hud-val" id="lat-disp">--</span></div>
+    <div class="hud-row"><span>LON</span> <span class="hud-val" id="lon-disp">--</span></div>
+    <div style="border-top: 1px solid #333; margin: 8px 0;"></div>
+    <div class="hud-row"><span>TEMP</span> <span class="hud-val temp" id="temp-disp">--</span></div>
+    <div class="hud-row"><span>ZOOM</span> <span class="hud-val" id="zoom-disp">Global</span></div>
+    <div class="hud-row" style="font-size: 10px; color: #888; margin-top:5px;"><span>MAP AREA</span> <span class="hud-val" id="crop-disp">Analyzing...</span></div>
+    <div class="hud-row" style="font-size: 10px; color: #888;"><span>PALETTE</span> <span class="hud-val" id="pal-disp">Searching...</span></div>
+</div>
+
+<div id="profile-panel">
+    <div id="profile-title">Run Profile (Temp vs Distance)</div>
+    <div id="profile-stats">Dist: -- NM | Avg: --°C</div>
+    <canvas id="profileCanvas" width="250" height="100"></canvas>
+</div>
+
+<div id="controls">
+    <button id="btn-reset">Reset View</button>
+    <button id="btn-he" class="active">Auto-Contrast</button>
+    <button id="btn-clear-run">Clear Run</button>
+</div>
+
+<div id="loading">Connecting to Satellite Feed...</div>
+ <!-- Logging interface -->
+    <script src="https://xaxero.com/dlog/tracker.js" data-app-name="SST Complex"></script>
+   
+<script>
+    // --- Configuration ---
+    const NOAA_URL = "https://www.ospo.noaa.gov/data/sst/contour/global.cf.gif";
+    const PROXY = `https://wsrv.nl/?url=${NOAA_URL}&output=png`; 
+
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    
+    // Profile Canvas
+    const pCanvas = document.getElementById('profileCanvas');
+    const pCtx = pCanvas.getContext('2d');
+
+    let state = {
+        img: null,
+        imgData: null,
+        mapBounds: { top: 0, bottom: 1, left: 0, right: 1 }, 
+        paletteLUT: [], 
+        lat: 0, 
+        lon: 0, 
+        zoom: 1, 
+        he: true, 
+        dragging: false,
+        lastX: 0, lastY: 0,
+        buf: null,
+        
+        run: {
+            active: false,    
+            drawing: false,   
+            start: {lat:0, lon:0},
+            end: {lat:0, lon:0}
+        }
+    };
+
+    // --- Generate "Original" Rainbow Colormap (Blue->Red) ---
+    const renderColormap = new Uint8ClampedArray(256 * 3);
+    
+    function createGradient(t) {
+        // t is 0..1
+        // Blue(0) -> Cyan(0.25) -> Green(0.5) -> Yellow(0.75) -> Red(1.0)
+        let r=0, g=0, b=0;
+        if (t < 0.25) { 
+            const p = t / 0.25; r=0; g=Math.floor(255*p); b=255;
+        } else if (t < 0.5) { 
+            const p = (t - 0.25) / 0.25; r=0; g=255; b=Math.floor(255*(1-p));
+        } else if (t < 0.75) { 
+            const p = (t - 0.5) / 0.25; r=Math.floor(255*p); g=255; b=0;
+        } else { 
+            const p = (t - 0.75) / 0.25; r=255; g=Math.floor(255*(1-p)); b=0;
+        }
+        return [r,g,b];
+    }
+
+    for (let i = 0; i < 256; i++) {
+        const rgb = createGradient(i/255);
+        renderColormap[i*3] = rgb[0];
+        renderColormap[i*3+1] = rgb[1];
+        renderColormap[i*3+2] = rgb[2];
+    }
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        requestAnimationFrame(render);
+    }
+    window.addEventListener('resize', resize);
+
+    async function init() {
+        resize();
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+            state.img = img;
+            const c = document.createElement('canvas');
+            c.width = img.width; c.height = img.height;
+            const cx = c.getContext('2d');
+            cx.drawImage(img, 0, 0);
+            state.imgData = cx.getImageData(0,0,img.width, img.height);
+            performDeepAnalysis(state.imgData);
+            document.getElementById('loading').style.display = 'none';
+            requestAnimationFrame(render);
+        };
+        img.onerror = () => {
+            document.getElementById('loading').textContent = "Using Simulation Data (Network Error)";
+            generateSim();
+        };
+        img.src = PROXY + "&t=" + Date.now();
+    }
+
+    function performDeepAnalysis(imgData) {
+        const w = imgData.width; const h = imgData.height; const d = imgData.data;
+        const isWhite = (idx) => d[idx] > 240 && d[idx+1] > 240 && d[idx+2] > 240;
+        const isColor = (idx) => { const r=d[idx], g=d[idx+1], b=d[idx+2]; return Math.abs(r-g) > 20 || Math.abs(r-b) > 20 || Math.abs(g-b) > 20; };
+
+        let firstMapRow = 0;
+        for (let y = 0; y < h / 2; y++) {
+            let cnt = 0; for (let x = 0; x < w; x+=10) if (!isWhite((y*w+x)*4)) cnt++;
+            if (cnt > (w/10) * 0.2) { firstMapRow = y; break; }
+        }
+
+        let paletteRow = -1;
+        for (let y = h - 10; y > h * 0.7; y--) {
+            let cnt = 0; for (let x = 0; x < w; x+=5) if (isColor((y*w+x)*4)) cnt++;
+            if (cnt > (w/5) * 0.5) { paletteRow = y; break; }
+        }
+
+        let searchStart = paletteRow > 0 ? paletteRow - 20 : h - 1;
+        while(searchStart > 0) {
+             let cnt = 0; for(let x=0; x<w; x+=10) if(!isWhite((searchStart*w+x)*4)) cnt++;
+             if (cnt < (w/10)*0.1) break; searchStart--;
+        }
+        let lastMapRow = h-1;
+        for (let y = searchStart; y > firstMapRow; y--) {
+             let cnt = 0; for(let x=0; x<w; x+=10) if(!isWhite((y*w+x)*4)) cnt++;
+             if (cnt > (w/10)*0.2) { lastMapRow = y; break; }
+        }
+
+        let firstMapCol = 0, lastMapCol = w - 1;
+        for (let x = 0; x < w / 2; x++) {
+            let cnt = 0; for (let y = firstMapRow+20; y < lastMapRow-20; y += 10) if (!isWhite((y*w+x)*4)) cnt++;
+            if (cnt > (lastMapRow-firstMapRow)/10 * 0.2) { firstMapCol = x; break; }
+        }
+        for (let x = w - 1; x > w / 2; x--) {
+            let cnt = 0; for (let y = firstMapRow+20; y < lastMapRow-20; y += 10) if (!isWhite((y*w+x)*4)) cnt++;
+            if (cnt > (lastMapRow-firstMapRow)/10 * 0.2) { lastMapCol = x; break; }
+        }
+
+        state.mapBounds = { top: firstMapRow/h, bottom: lastMapRow/h, left: firstMapCol/w, right: lastMapCol/w };
+        document.getElementById('crop-disp').textContent = `Crop X:${firstMapCol}-${lastMapCol} Y:${firstMapRow}-${lastMapRow}`;
+
+        if (paletteRow > 0) extractPalette(paletteRow, w, d);
+        else document.getElementById('pal-disp').textContent = "Not Found (Using Default)";
+    }
+
+    function extractPalette(y, w, data) {
+        const rowStart = y * w * 4;
+        let extracted = [];
+        let startX = 0, endX = w-1;
+        for(let x=0; x<w; x++) {
+            const i = rowStart + x*4; if (data[i]<240||data[i+1]<240||data[i+2]<240) { startX=x; break; }
+        }
+        for(let x=w-1; x>0; x--) {
+            const i = rowStart + x*4; if (data[i]<240||data[i+1]<240||data[i+2]<240) { endX=x; break; }
+        }
+        const barWidth = endX - startX;
+        for(let i=0; i<100; i++) {
+            const x = Math.floor(startX + (barWidth * (i/100)));
+            const idx = rowStart + x*4;
+            const temp = -2 + (i/100) * 37; 
+            extracted.push({ r: data[idx], g: data[idx+1], b: data[idx+2], temp: temp });
+        }
+        state.paletteLUT = extracted;
+        document.getElementById('pal-disp').textContent = `Decoded (${startX}-${endX}px)`;
+    }
+
+    function getTempFromColor(r, g, b) {
+        if (r>240 && g>240 && b>240) return null; 
+        if (r<30 && g<30 && b<30) return null; 
+        if (r<30 && g<60 && b<30) return "LAND"; 
+        if (state.paletteLUT.length > 0) {
+            let minDist = Infinity, matchTemp = 0;
+            for(let i=0; i<state.paletteLUT.length; i++) {
+                const p = state.paletteLUT[i];
+                const dist = Math.sqrt((r-p.r)**2 + (g-p.g)**2 + (b-p.b)**2);
+                if (dist < minDist) { minDist = dist; matchTemp = p.temp; }
+            }
+            if (minDist > 50) return null; return matchTemp;
+        }
+        return -2 + ((r+g+b)/3/255)*37;
+    }
+
+    function getTempAtCoord(lat, lon) {
+        if (!state.imgData) return null;
+        
+        const mapTopPx = state.mapBounds.top * state.img.height;
+        const mapHeightPx = (state.mapBounds.bottom - state.mapBounds.top) * state.img.height;
+        const mapLeftPx = state.mapBounds.left * state.img.width;
+        const mapWidthPx = (state.mapBounds.right - state.mapBounds.left) * state.img.width;
+        
+        const sy = ((90 - lat)/180) * mapHeightPx + mapTopPx;
+        let nLon = lon;
+        while(nLon > 180) nLon -= 360;
+        while(nLon < -180) nLon += 360;
+        
+        let sx = ((nLon + 180)/360) * mapWidthPx + mapLeftPx;
+        
+        const ix = Math.floor(sx);
+        const iy = Math.floor(sy);
+        
+        if (iy >= 0 && iy < state.img.height && ix >= 0 && ix < state.img.width) {
+            const idx = (iy * state.img.width + ix) * 4;
+            return getTempFromColor(state.imgData.data[idx], state.imgData.data[idx+1], state.imgData.data[idx+2]);
+        }
+        return null;
+    }
+
+    function formatDM(val, isLat) {
+        let abs = Math.abs(val);
+        let deg = Math.floor(abs);
+        let min = (abs - deg) * 60;
+        if (min.toFixed(3) === "60.000") { min = 0; deg += 1; }
+        const suffix = isLat ? (val >= 0 ? "N" : "S") : (val >= 0 ? "E" : "W");
+        return `${deg}° ${min.toFixed(3)}' ${suffix}`;
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+        const R = 3440.065; 
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        let dLon = (lon2 - lon1);
+        while(dLon > 180) dLon -= 360;
+        while(dLon < -180) dLon += 360;
+        dLon = dLon * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    function generateProfile() {
+        if (!state.run.start || !state.run.end) return;
+        
+        const sLat = state.run.start.lat;
+        const sLon = state.run.start.lon;
+        const eLat = state.run.end.lat;
+        const eLon = state.run.end.lon;
+        
+        const totalDist = haversine(sLat, sLon, eLat, eLon);
+        
+        const points = [];
+        let temps = [];
+        let validSum = 0;
+        let validCount = 0;
+        
+        let dLon = eLon - sLon;
+        if (dLon > 180) dLon -= 360;
+        if (dLon < -180) dLon += 360;
+        const dLat = eLat - sLat;
+
+        for (let i=0; i<=100; i++) {
+            const t = i/100;
+            const cLat = sLat + dLat * t;
+            const cLon = sLon + dLon * t;
+            const dist = totalDist * t;
+            
+            const tempVal = getTempAtCoord(cLat, cLon);
+            let tempNum = null;
+            if (typeof tempVal === 'number') {
+                tempNum = tempVal;
+                validSum += tempNum;
+                validCount++;
+            }
+            points.push({ dist, temp: tempNum });
+            if(tempNum !== null) temps.push(tempNum);
+        }
+
+        pCtx.clearRect(0,0, pCanvas.width, pCanvas.height);
+        
+        if (validCount === 0) {
+            pCtx.fillStyle = "#888"; pCtx.fillText("No Temp Data", 100, 50);
+            return;
+        }
+        
+        const minT = Math.min(...temps) - 1;
+        const maxT = Math.max(...temps) + 1;
+        const avgT = validSum / validCount;
+        
+        document.getElementById('profile-stats').textContent = `Dist: ${totalDist.toFixed(1)} NM | Avg: ${avgT.toFixed(1)}°C`;
+        
+        pCtx.strokeStyle = "#444"; pCtx.lineWidth = 1; pCtx.beginPath();
+        pCtx.moveTo(0, pCanvas.height-1); pCtx.lineTo(pCanvas.width, pCanvas.height-1);
+        pCtx.stroke();
+        
+        pCtx.strokeStyle = "#ffab70"; pCtx.lineWidth = 2; pCtx.beginPath();
+        let first = true;
+        
+        for(let i=0; i<points.length; i++) {
+            const p = points[i];
+            if (p.temp === null) continue;
+            
+            const x = (p.dist / totalDist) * pCanvas.width;
+            const y = pCanvas.height - ((p.temp - minT) / (maxT - minT)) * pCanvas.height;
+            
+            if (first) { pCtx.moveTo(x, y); first = false; }
+            else { pCtx.lineTo(x, y); }
+        }
+        pCtx.stroke();
+        
+        pCtx.fillStyle = "#aaa"; pCtx.font = "10px monospace";
+        pCtx.fillText(maxT.toFixed(0)+"°", 2, 10);
+        pCtx.fillText(minT.toFixed(0)+"°", 2, pCanvas.height-2);
+        
+        document.getElementById('profile-panel').style.display = 'block';
+    }
+
+    function generateSim() {
+        const w = 1000, h = 600; const c = document.createElement('canvas'); c.width=w; c.height=h;
+        const x = c.getContext('2d');
+        x.fillStyle='#fff'; x.fillRect(0,0,w,h);
+        const mapY=50, mapH=400, mapX=50, mapW=900;
+        const g=x.createLinearGradient(0,mapY,0,mapY+mapH); g.addColorStop(0,'#000044'); g.addColorStop(0.5,'#0088ff'); g.addColorStop(1,'#000044');
+        x.fillStyle=g; x.fillRect(mapX,mapY,mapW,mapH);
+        x.fillStyle='#002200'; x.fillRect(130+mapX, 100+mapY, 130, 90);
+        const palY=500, palH=20; const pg=x.createLinearGradient(100,0,900,0); pg.addColorStop(0,'#00f'); pg.addColorStop(0.5,'#0f0'); pg.addColorStop(1,'#f00');
+        x.fillStyle=pg; x.fillRect(100,palY,800,palH);
+        state.img=c; state.imgData=x.getImageData(0,0,w,h);
+        performDeepAnalysis(state.imgData); 
+        document.getElementById('loading').style.display='none';
+        requestAnimationFrame(render);
+    }
+
+    function render() {
+        if (!state.img) return;
+
+        const degH = 180 / state.zoom;
+        const aspect = canvas.width / canvas.height;
+        const rad = state.lat * Math.PI / 180;
+        const cosLat = Math.max(0.1, Math.cos(rad));
+        const degW = degH * aspect / cosLat;
+        const topLat = state.lat + degH / 2;
+        const leftLon = state.lon - degW / 2;
+
+        const mapTopPx = state.mapBounds.top * state.img.height;
+        const mapBottomPx = state.mapBounds.bottom * state.img.height;
+        const mapHeightPx = mapBottomPx - mapTopPx;
+        const mapLeftPx = state.mapBounds.left * state.img.width;
+        const mapRightPx = state.mapBounds.right * state.img.width;
+        const mapWidthPx = mapRightPx - mapLeftPx;
+
+        const viewW = Math.ceil(canvas.width);
+        const viewH = Math.ceil(canvas.height);
+        
+        if (!state.buf) state.buf = document.createElement('canvas');
+        if (state.buf.width !== viewW || state.buf.height !== viewH) { state.buf.width = viewW; state.buf.height = viewH; }
+        const bCtx = state.buf.getContext('2d', {willReadFrequently: true});
+        bCtx.imageSmoothingEnabled = false; bCtx.fillStyle = '#000'; bCtx.fillRect(0,0, viewW, viewH);
+
+        const pxPerDegX = mapWidthPx / 360;
+        const pxPerDegY = mapHeightPx / 180;
+        
+        const srcX_Relative = ((leftLon + 180) / 360) * mapWidthPx;
+        const srcX = srcX_Relative + mapLeftPx;
+        const srcY = ((90 - topLat) / 180) * mapHeightPx + mapTopPx;
+        const srcW = degW * pxPerDegX;
+        const srcH = degH * pxPerDegY;
+
+        let curX = srcX; let drawn = 0;
+        for(let i=0; i<3; i++) {
+            let relX = curX - mapLeftPx;
+            let nRelX = relX % mapWidthPx; if (nRelX < 0) nRelX += mapWidthPx;
+            let absX = nRelX + mapLeftPx;
+            const avail = mapRightPx - absX;
+            const rem = srcW - drawn;
+            if (rem <= 0.1) break;
+            const slice = Math.min(avail, rem);
+            const dstX = (drawn / srcW) * viewW;
+            const dstW = (slice / srcW) * viewW;
+            bCtx.drawImage(state.img, absX, srcY, slice, srcH, dstX, 0, dstW, viewH);
+            curX += slice; drawn += slice;
+        }
+
+        if (state.he) applyHE(bCtx, viewW, viewH);
+        ctx.fillStyle = "#000"; ctx.fillRect(0,0, canvas.width, canvas.height);
+        ctx.drawImage(state.buf, 0, 0);
+
+        if (state.run.active) {
+            const sLat = state.run.start.lat;
+            const sLon = state.run.start.lon;
+            const eLat = state.run.end.lat;
+            const eLon = state.run.end.lon;
+            const p1 = latLonToScreen(sLat, sLon, topLat, leftLon, degH, degW);
+            const p2 = latLonToScreen(eLat, eLon, topLat, leftLon, degH, degW);
+            ctx.strokeStyle = "#000000"; ctx.lineWidth = 3; 
+            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1; 
+            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+            ctx.fillStyle = "#fff";
+            ctx.beginPath(); ctx.arc(p1.x, p1.y, 4, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(p2.x, p2.y, 4, 0, Math.PI*2); ctx.fill();
+        }
+
+        drawGrid(degH, degW, topLat, leftLon);
+        drawScale(degH, degW);
+        document.getElementById('zoom-disp').textContent = degH.toFixed(1) + "° V-Scale";
+    }
+
+    function latLonToScreen(lat, lon, topLat, leftLon, degH, degW) {
+        let dLon = lon - leftLon;
+        while(dLon < 0 && dLon > -300) dLon += 360; 
+        const y = ((topLat - lat) / degH) * canvas.height;
+        const x = (dLon / degW) * canvas.width;
+        return {x, y};
+    }
+
+    function applyHE(ctxSource, w, h) {
+        const id = ctxSource.getImageData(0,0,w,h); const d = id.data;
+        const hist = new Uint32Array(256); let min=255, max=0, count=0;
+        const vals = new Uint8Array(d.length / 4);
+        
+        for(let i=0; i<d.length; i+=4) {
+            const r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
+            
+            // Masking Logic
+            // 1. Transparent is invalid
+            if (a===0) continue;
+            // 2. White/Grey (>230) is Land/Ice/Margin -> Don't count in Histogram
+            if (r>230 && g>230 && b>230) continue;
+            // 3. Black/Dark (<40) is Land -> Don't count
+            if (r<40 && g<60 && b<40) continue; 
+            
+            // Sort Key: 280 - Hue.
+            // Spreads Purple(280) -> Blue(240) -> Cyan(180) -> Green(120) -> Red(0)
+            // Range 0 to 280.
+            
+            let hVal = 0;
+            const mx = Math.max(r,g,b);
+            const mn = Math.min(r,g,b);
+            if (mx !== mn) {
+                if (mx === r) hVal = (g - b) / (mx - mn);
+                else if (mx === g) hVal = 2 + (b - r) / (mx - mn);
+                else hVal = 4 + (r - g) / (mx - mn);
+                hVal *= 60;
+                if (hVal < 0) hVal += 360;
+            }
+            
+            let sortKey = 280 - hVal;
+            // Clamp outliers
+            if (sortKey < 0) sortKey = 0; 
+            if (sortKey > 280) sortKey = 280;
+            
+            // Normalize 0-255
+            let val = Math.floor(sortKey * (255/280));
+            
+            vals[i/4] = val; 
+            hist[val]++; 
+            if(val<min)min=val; if(val>max)max=val; count++;
+        }
+        
+        const cdf=new Uint32Array(256); let acc=0; for(let i=0; i<256; i++){acc+=hist[i]; cdf[i]=acc;}
+        const cdfMin=cdf[min]; const range=count-cdfMin;
+        
+        if (range>0) {
+            for(let i=0; i<d.length; i+=4) {
+                const r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
+                
+                // FORCE LAND COLORS
+                // If it was white/bright in source, force to Dark Olive
+                if (r>230 && g>230 && b>230) {
+                    d[i]=40; d[i+1]=50; d[i+2]=40; d[i+3]=255; 
+                    continue;
+                }
+                // If it was dark in source, force to Dark Olive
+                if (r<40 && g<60 && b<40) {
+                    d[i]=30; d[i+1]=40; d[i+2]=30; d[i+3]=255; 
+                    continue;
+                }
+                if (a===0) continue;
+
+                // Apply Contrast to Water
+                const originalVal = vals[i/4];
+                // Check if val actually maps (it might be 0 if we skipped it in pass 1, but we filtered loops same way)
+                // Actually vals array is 0 init. If we skipped in pass 1, val is 0. 
+                // But we check masks again here.
+                
+                const eq = Math.floor( ((cdf[originalVal]-cdfMin)/range) * 255 );
+                const c = eq*3; 
+                d[i]=renderColormap[c]; d[i+1]=renderColormap[c+1]; d[i+2]=renderColormap[c+2];
+            }
+        }
+        ctxSource.putImageData(id, 0, 0);
+    }
+
+    function normalizeLon(lon) {
+        let n = lon; while (n > 180) n -= 360; while (n < -180) n += 360; return n;
+    }
+
+    function drawGrid(degH, degW, topLat, leftLon) {
+        ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1; ctx.font = "11px monospace"; ctx.fillStyle = "rgba(255,255,255,0.7)";
+        let step = 10; if (degH < 20) step = 5; if (degH < 5) step = 1; if (degH < 1) step = 0.5; if (degH < 0.2) step = 0.1;
+        const startLat = Math.floor(topLat / step) * step;
+        for(let lat = startLat; lat > topLat - degH; lat -= step) {
+            const py = ((topLat - lat) / degH) * canvas.height;
+            ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(canvas.width, py); ctx.stroke(); 
+            if (step < 1) {
+               ctx.fillText(formatDM(lat, true), 5, py-2); 
+            } else {
+               ctx.fillText(lat.toFixed(0)+"°", 5, py-2);
+            }
+        }
+        const startLon = Math.ceil(leftLon / step) * step;
+        for(let lon = startLon; lon < leftLon + degW; lon += step) {
+            const px = ((lon - leftLon) / degW) * canvas.width;
+            ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
+            const nLon = normalizeLon(lon);
+            if (step < 1) {
+                ctx.fillText(formatDM(nLon, false), px+2, canvas.height-5);
+            } else {
+                ctx.fillText(nLon.toFixed(0)+"°", px+2, canvas.height-5);
+            }
+        }
+    }
+
+    function drawScale(degH, degW) {
+        const pxHeight = canvas.height;
+        const pxPerDeg = pxHeight / degH;
+        const pxPerNM = pxPerDeg / 60;
+        const targetNM = 150 / pxPerNM;
+        let scaleNM = 10;
+        if (targetNM > 5000) scaleNM = 5000;
+        else if (targetNM > 1000) scaleNM = 1000;
+        else if (targetNM > 500) scaleNM = 500;
+        else if (targetNM > 100) scaleNM = 100;
+        else if (targetNM > 50) scaleNM = 50;
+        else if (targetNM > 10) scaleNM = 10;
+        else scaleNM = 1;
+
+        const scaleW = scaleNM * pxPerNM;
+        const sx = 20;
+        const sy = canvas.height - 40;
+        
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(sx, sy, scaleW, 2);
+        ctx.fillRect(sx, sy-5, 2, 7); 
+        ctx.fillRect(sx+scaleW, sy-5, 2, 7); 
+        ctx.font = "12px monospace";
+        ctx.fillText(scaleNM + " NM", sx + 5, sy - 8);
+    }
+
+    canvas.addEventListener('mousedown', e => {
+        state.dragging = true;
+        state.lastX = e.clientX; state.lastY = e.clientY;
+        document.body.style.cursor = "grabbing";
+    });
+    window.addEventListener('mouseup', () => {
+        state.dragging = false;
+        document.body.style.cursor = "crosshair";
+    });
+    
+    canvas.addEventListener('dblclick', e => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        
+        const degH = 180 / state.zoom;
+        const aspect = canvas.width / canvas.height;
+        const rad = state.lat * Math.PI / 180;
+        const degW = degH * aspect / Math.max(0.1, Math.cos(rad));
+        const topLat = state.lat + degH / 2;
+        const leftLon = state.lon - degW / 2;
+        const cLat = topLat - (my / canvas.height) * degH;
+        const cLon = normalizeLon(leftLon + (mx / canvas.width) * degW);
+        
+        if (!state.run.drawing) {
+            state.run.active = true;
+            state.run.drawing = true;
+            state.run.start = { lat: cLat, lon: cLon };
+            state.run.end = { lat: cLat, lon: cLon }; 
+            document.getElementById('btn-clear-run').style.display = 'block';
+            document.getElementById('profile-panel').style.display = 'none'; 
+        } else {
+            state.run.drawing = false;
+            state.run.end = { lat: cLat, lon: cLon };
+            generateProfile();
+        }
+        requestAnimationFrame(render);
+    });
+
+    document.getElementById('btn-clear-run').onclick = () => {
+        state.run.active = false;
+        state.run.drawing = false;
+        state.run.start = null;
+        state.run.end = null;
+        document.getElementById('profile-panel').style.display = 'none';
+        document.getElementById('btn-clear-run').style.display = 'none';
+        requestAnimationFrame(render);
+    };
+
+    canvas.addEventListener('mousemove', e => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        const degH = 180 / state.zoom;
+        const aspect = canvas.width / canvas.height;
+        const rad = state.lat * Math.PI / 180;
+        const degW = degH * aspect / Math.max(0.1, Math.cos(rad));
+        const topLat = state.lat + degH / 2;
+        const leftLon = state.lon - degW / 2;
+        const cLat = topLat - (my / canvas.height) * degH;
+        const cLon = normalizeLon(leftLon + (mx / canvas.width) * degW);
+
+        if (state.run.drawing) {
+            state.run.end = { lat: cLat, lon: cLon };
+            requestAnimationFrame(render);
+        } else if (state.dragging) {
+            const dx = e.clientX - state.lastX;
+            const dy = e.clientY - state.lastY;
+            state.lat += (dy / canvas.height) * degH;
+            state.lon -= (dx / canvas.width) * degW;
+            state.lat = Math.max(-85, Math.min(85, state.lat));
+            if (state.lon > 180) state.lon -= 360;
+            if (state.lon < -180) state.lon += 360;
+            state.lastX = e.clientX; state.lastY = e.clientY;
+            requestAnimationFrame(render);
+        }
+
+        document.getElementById('lat-disp').textContent = formatDM(cLat, true);
+        document.getElementById('lon-disp').textContent = formatDM(cLon, false);
+        
+        const temp = getTempAtCoord(cLat, cLon);
+        if (temp === null) document.getElementById('temp-disp').textContent = "--";
+        else if (temp === "LAND") document.getElementById('temp-disp').textContent = "LAND";
+        else document.getElementById('temp-disp').textContent = temp.toFixed(1) + "°C";
+    });
+
+    canvas.addEventListener('wheel', e => {
+        const sens = 0.001;
+        state.zoom *= (1 - e.deltaY * sens);
+        state.zoom = Math.max(1, Math.min(400, state.zoom)); 
+        requestAnimationFrame(render);
+    });
+
+    document.getElementById('btn-reset').onclick = () => { state.lat=0; state.lon=0; state.zoom=1; requestAnimationFrame(render); };
+    document.getElementById('btn-he').onclick = (e) => { state.he = !state.he; e.target.classList.toggle('active'); requestAnimationFrame(render); };
+
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO Metadata -->
+    <title>HO-229 Sight Reduction & Plotter - Xaxero Marine Software</title>
+    <meta name="description" content="Free online HO-229 Sight Reduction tool with integrated Nautical Almanac, Table Simulator, Star Finder, and interactive Plotting Sheet. Calculate celestial fixes instantly. Open source and offline capable.">
+    <meta name="keywords" content="Celestial Navigation, Sight Reduction, HO-229, Nautical Almanac, Marine Navigation, Star Finder, Sextant, Navigation Plotter, Running Fix, Intercept Method, Maritime Software, Open Source Navigation">
+    <meta name="author" content="Xaxero Marine Software">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:title" content="HO-229 Sight Reduction & Plotter">
+    <meta property="og:description" content="Modern celestial navigation tool. Integrated almanac, digital sight form, table simulator, and visual plotter. No tables required.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xaxero.com/tools/ho229_info.html">
+    <meta property="og:image" content="https://xaxero.com/images/XaxeroMainLogoFinal.png">
+
+    <style>
+        /* --- Global Styles (Matches Main Site) --- */
+        :root {
+            --primary-blue: #004a99;
+            --dark-blue: #0f294a;
+            --accent-gold: #f1c50e;
+            --accent-green: #53b84b;
+            --text-light: #ffffff;
+            --text-dark: #333333;
+            --bg-light: #ffffff;
+            --bg-medium: #f4f4f4;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-light);
+        }
+        .container { width: 90%; max-width: 1100px; margin: 0 auto; }
+        img { max-width: 100%; height: auto; }
+        a { text-decoration: none; color: var(--primary-blue); }
+        
+        /* --- Header --- */
+        .main-header {
+            background: var(--bg-light);
+            padding: 1rem 0;
+            border-bottom: 1px solid #ddd;
+        }
+        .main-header .container { display: flex; justify-content: space-between; align-items: center; }
+        .main-header .logo img { height: 50px; }
+        .main-nav ul { display: flex; list-style: none; }
+        .main-nav li { margin-left: 1.5rem; }
+        .main-nav a { font-weight: bold; color: var(--text-dark); }
+        .main-nav a:hover { color: var(--primary-blue); }
+
+        /* --- Doc Specific Styles --- */
+        .doc-hero {
+            background: var(--dark-blue);
+            color: var(--text-light);
+            padding: 4rem 0;
+            text-align: center;
+        }
+        .doc-hero h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+        .doc-hero p { font-size: 1.2rem; opacity: 0.9; max-width: 700px; margin: 0 auto 2rem auto; }
+        
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: var(--accent-gold);
+            color: var(--dark-blue);
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.3s ease;
+            margin: 0 0.5rem;
+        }
+        .btn:hover { background: #d9b00c; }
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--text-light);
+            color: var(--text-light);
+        }
+        .btn-outline:hover { background: var(--text-light); color: var(--dark-blue); }
+
+        .doc-content { padding: 4rem 0; }
+        .feature-block { margin-bottom: 3rem; }
+        .feature-block h2 { color: var(--primary-blue); margin-bottom: 1rem; border-bottom: 2px solid var(--bg-medium); padding-bottom: 0.5rem; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-top: 2rem; }
+        .feature-card { background: var(--bg-medium); padding: 1.5rem; border-radius: 8px; border-left: 4px solid var(--primary-blue); }
+        .feature-card h3 { margin-bottom: 0.5rem; color: var(--dark-blue); }
+
+        .license-block { background: #eee; padding: 2rem; border-radius: 8px; font-size: 0.9rem; color: #555; margin-top: 3rem; }
+
+        /* --- Footer --- */
+        .main-footer { background: var(--dark-blue); color: var(--text-light); padding: 3rem 0; text-align: center; }
+    </style>
+</head>
+<body>
+    <header class="main-header">
+        <div class="container">
+            <a href="index.html" class="logo">
+                <img src="images/XaxeroLogoSansSloganCopy.png" alt="Xaxero Logo">
+            </a>
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="Ship-Comms.html">Ship Comms</a></li>
+                    <li><a href="Downloads.html">Downloads</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="doc-hero">
+        <div class="container">
+            <h1>HO-229 Sight Reduction & Plotter</h1>
+            <p>A modern, open-source celestial navigation tool featuring a fully interactive H.O. 229 Table Simulator.</p>
+            <a href="https://xaxero.com/tools/cnavj.html" class="btn" target="_blank">Launch App</a>
+            <a href="./cnavjDoc.html" class="btn btn-outline" target="_blank">View Guide</a>
+        </div>
+    </section>
+
+    <main class="doc-content container">
+        <div class="feature-block">
+            <h2>Overview</h2>
+            <p>This application streamlines the traditional "intercept method" of sight reduction. Unlike standard calculators that hide the math, this tool combines a high-precision internal almanac with a <strong>Digital H.O. 229 Table Simulator</strong>, allowing students and navigators to verify their manual sight reduction steps directly on screen.</p>
+        </div>
+
+        <div class="feature-block">
+            <h2>Key Features</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>H.O. 229 Simulator</h3>
+                    <p>A pixel-perfect simulation of the sight reduction tables. Displays the exact Page (LHA), Latitude, and Declination grid used for reduction, including interpolation logic.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>AP Assistant</h3>
+                    <p>Automatically calculates the mathematically correct <strong>Assumed Position (AP)</strong>. It adjusts your longitude to ensure an integer LHA, a critical step for manual table entry.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Integrated Almanac</h3>
+                    <p>Calculates GHA, Declination, SD, and HP on the fly for any second in time using J2000 algorithms. No physical books required.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Digital Workflow</h3>
+                    <p>Follows standard USNO/H.O. logic with auto-corrections for Index Error, Dip, Refraction, and Parallax. Data is persisted automatically.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Interactive Plotter</h3>
+                    <p>Visual plotting sheet with running fix capability. Handles date-aware advancement of LOPs for fixes spanning across midnight.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Star Finder</h3>
+                    <p>"Identify" mode scans the sky for bodies within 2° of your observed altitude, perfect for identifying stars in twilight.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="feature-block">
+            <h2>Technical & License</h2>
+            <p><strong>Architecture:</strong> React 18, Tailwind CSS, Astronomy Engine. Delivered as a single HTML file for completely offline portability.</p>
+            <div class="license-block">
+                <strong>GNU General Public License v3.0</strong><br><br>
+                This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License.
+                This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
+            </div>
+        </div>
+    </main>
+
+    <footer class="main-footer">
+        <div class="container">
+            <p>&copy; <span id="year"></span> Xaxero. All rights reserved.</p>
+        </div>
+    </footer>
+    <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

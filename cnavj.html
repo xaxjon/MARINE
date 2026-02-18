@@ -1,0 +1,2045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HO-229 Sight Reduction & Plotter</title>
+     <!-- Logging interface -->
+    <script src="https://xaxero.com/dlog/tracker.js" data-app-name="CNAVJ"></script>
+   
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Astronomy Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Roboto+Mono:wght@300;400;600&family=Merriweather:wght@300;400;700&display=swap');
+
+        .red-mode {
+            filter: sepia(100%) hue-rotate(-50deg) saturate(400%) contrast(1.2);
+            background-color: #050000 !important;
+            color: #d00 !important;
+        }
+        .red-mode button, .red-mode input, .red-mode select, .red-mode option, .red-mode .card, .red-mode .modal-content, .red-mode table, .red-mode th, .red-mode .border, .red-mode .border-b, .red-mode .border-t, .red-mode .divide-y > :not([hidden]) ~ :not([hidden]) {
+            border-color: #800 !important;
+            background-color: #1a0000 !important;
+            color: #f00 !important;
+        }
+        .red-mode .bg-white, .red-mode .bg-slate-50, .red-mode .bg-slate-100, .red-mode .bg-slate-800, .red-mode .bg-slate-900, .red-mode .bg-gray-100 {
+            background-color: #150000 !important;
+            color: #f00 !important;
+        }
+        .red-mode .text-slate-500, .red-mode .text-slate-600, .red-mode .text-slate-400, .red-mode .text-slate-700 {
+            color: #b91c1c !important;
+        }
+        .red-mode .bg-blue-50, .red-mode .bg-green-50, .red-mode .bg-amber-50, .red-mode .bg-gray-50, .red-mode .bg-purple-50 {
+             background-color: #300 !important;
+             color: #f55 !important;
+        }
+        
+        /* Canvas specific for red mode */
+        .red-mode canvas {
+            filter: invert(1) hue-rotate(180deg); 
+            background-color: #222 !important;
+        }
+
+        /* HO229 Page Styling */
+        .ho229-page {
+            font-family: 'Courier Prime', monospace;
+            background-color: #fdfbf7;
+            background-image: radial-gradient(#e5e5e5 1px, transparent 1px);
+            background-size: 20px 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border: 1px solid #d1d5db;
+        }
+        .ho-header { font-family: 'Merriweather', serif; }
+        .handwritten-circle { position: relative; z-index: 10; }
+        .handwritten-circle::after {
+            content: ''; position: absolute; top: -10%; left: -10%; width: 120%; height: 120%;
+            border: 2px solid #ef4444; border-radius: 50% 60% 50% 40% / 50% 50% 60% 60%;
+            transform: rotate(-2deg); pointer-events: none; opacity: 0.8;
+        }
+        .red-mode .ho229-page { background-color: #1a0000; background-image: none; border-color: #800; }
+        .red-mode .handwritten-circle::after { border-color: #f00; }
+
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        /* Prevents iOS zoom on inputs */
+        input, select, textarea { font-size: 16px !important; }
+
+        /* Form Row Styles */
+        .form-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; }
+        .form-row:last-child { border-bottom: none; }
+        .form-label { font-size: 0.85rem; color: #64748b; display: flex; align-items: center; gap: 4px; }
+        .form-val { font-family: monospace; font-weight: 600; font-size: 1rem; }
+        .red-mode .form-row { border-color: #600; }
+        
+        /* Study Mode Styles */
+        .help-icon { cursor: pointer; transition: all 0.2s; opacity: 0.7; }
+        .help-icon:hover { opacity: 1; transform: scale(1.1); }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-900 transition-colors duration-300 overflow-x-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // ==========================================
+        // MODULE 1: CONSTANTS & UTILITIES
+        // ==========================================
+        
+        const CONSTANTS = {
+            STARS: {
+                "Acamar": { ra: 2.9723, dec: -40.3046 }, "Achernar": { ra: 1.6285, dec: -57.2424 }, "Acrux": { ra: 12.4433, dec: -63.0990 },
+                "Adhara": { ra: 6.9771, dec: -28.9720 }, "Aldebaran": { ra: 4.5986, dec: 16.5093 }, "Alioth": { ra: 12.9004, dec: 55.9598 },
+                "Alkaid": { ra: 13.7923, dec: 49.3133 }, "Alnair": { ra: 22.1372, dec: -46.9610 }, "Alnilam": { ra: 5.6035, dec: -1.2019 },
+                "Alphard": { ra: 9.4597, dec: -8.6586 }, "Alphecca": { ra: 15.5781, dec: 26.7147 }, "Alpheratz": { ra: 0.1397, dec: 29.0904 },
+                "Altair": { ra: 19.8463, dec: 8.8683 }, "Ankaa": { ra: 0.4380, dec: -42.3051 }, "Antares": { ra: 16.4901, dec: -26.4320 },
+                "Arcturus": { ra: 14.2610, dec: 19.1822 }, "Atria": { ra: 16.8111, dec: -69.0277 }, "Avior": { ra: 8.3752, dec: -59.5094 },
+                "Bellatrix": { ra: 5.4188, dec: 6.3497 }, "Betelgeuse": { ra: 5.9195, dec: 7.4070 }, "Canopus": { ra: 6.3991, dec: -52.6956 },
+                "Capella": { ra: 5.2781, dec: 45.9979 }, "Deneb": { ra: 20.6905, dec: 45.2803 }, "Denebola": { ra: 11.8176, dec: 14.5720 },
+                "Diphda": { ra: 0.7264, dec: -17.9866 }, "Dubhe": { ra: 11.0621, dec: 61.7510 }, "Eltanin": { ra: 17.9434, dec: 51.4889 },
+                "Enif": { ra: 21.7364, dec: 9.8750 }, "Fomalhaut": { ra: 22.9608, dec: -29.6222 }, "Gacrux": { ra: 12.5194, dec: -57.1132 },
+                "Gienah": { ra: 12.2634, dec: -17.5419 }, "Hadar": { ra: 14.0637, dec: -60.3730 }, "Hamal": { ra: 2.1185, dec: 23.4624 },
+                "Kaus Australis": { ra: 18.4028, dec: -34.3846 }, "Kochab": { ra: 14.8450, dec: 74.1555 }, "Markab": { ra: 23.0793, dec: 15.2053 },
+                "Menkar": { ra: 3.0390, dec: 4.0897 }, "Menkent": { ra: 14.1112, dec: -36.3692 }, "Miaplacidus": { ra: 9.2206, dec: -69.7172 },
+                "Mirfak": { ra: 3.4053, dec: 49.8612 }, "Nunki": { ra: 18.9183, dec: -26.2967 }, "Peacock": { ra: 20.4274, dec: -56.7351 },
+                "Polaris": { ra: 2.5303, dec: 89.2641 }, "Pollux": { ra: 7.7552, dec: 28.0261 }, "Procyon": { ra: 7.6551, dec: 5.2249 },
+                "Rasalhague": { ra: 17.5906, dec: 12.5600 }, "Regulus": { ra: 10.1395, dec: 11.9672 }, "Rigel": { ra: 5.2422, dec: -8.2016 },
+                "Rigil Kentaurus": { ra: 14.6607, dec: -60.8339 }, "Sabik": { ra: 17.1715, dec: -15.7249 }, "Schedar": { ra: 0.6751, dec: 56.5373 },
+                "Shaula": { ra: 17.5615, dec: -37.1038 }, "Sirius": { ra: 6.7524, dec: -16.7161 }, "Spica": { ra: 13.4198, dec: -11.1613 },
+                "Suhail": { ra: 9.1332, dec: -43.4326 }, "Vega": { ra: 18.6156, dec: 38.7837 }, "Zubenelgenubi": { ra: 14.8481, dec: -16.0417 }
+            },
+            PLANETS: ["Venus", "Mars", "Jupiter", "Saturn"],
+            HELP_TEXT: {
+                body: "The celestial body (Star, Sun, Moon, Planet) being observed. Different bodies require different corrections (e.g., Parallax for Moon, Semi-diameter for Sun/Moon).",
+                hs: "Sextant Altitude (Hs): The raw angle measured by the sextant from the horizon to the body.",
+                ie: "Index Error (IE): A mechanical error in the sextant. Check by aligning the horizon in both mirrors. If the horizon doesn't line up at 0°0.0', the difference is IE.",
+                he: "Height of Eye (Dip): Correction for the observer's elevation above sea level. The higher you are, the lower the horizon appears, requiring a negative correction.",
+                course: "Ship's Course: The direction the vessel is moving, used to advance Lines of Position (LOPs) to a common time.",
+                speed: "Ship's Speed: Speed in knots, used to calculate distance traveled when running LOPs forward.",
+                ap: "Assumed Position (AP): A position chosen close to your Dead Reckoning (DR). For H.O. 229 table entry, use an Integer Latitude and choose an Assumed Longitude that results in an Integer LHA.",
+                ha: "Apparent Altitude (Ha): Sextant altitude corrected for Index Error and Dip. This is the altitude relative to the true horizon, but still affected by atmosphere.",
+                mainCorr: "Main Correction: Combines Refraction (bending of light by atmosphere) and Semi-Diameter (SD). SD corrects from the edge (limb) of the Sun/Moon to the center.",
+                envCorr: "Atmospheric Correction: Additional refraction correction based on Temperature and Pressure. Cold air and High pressure increase refraction (making stars appear higher), requiring a larger subtraction.",
+                parallax: "Parallax: Significant only for the Moon. Corrects for the difference in angle seeing the Moon from the Earth's surface versus the Earth's center.",
+                ho: "Observed Altitude (Ho): The final 'True' altitude of the body relative to the celestial horizon/Earth's center. This is what we compare against the calculated altitude.",
+                gha: "Greenwich Hour Angle (GHA): The longitude of the body's Geographic Position (GP) measured West from Greenwich. Think of it as the 'Celestial Longitude'.",
+                incr: "Increment: The amount the Earth turned (and the body moved) since the last whole hour. Added to GHA.",
+                sha: "Sidereal Hour Angle (SHA): For stars, GHA is calculated as GHA Aries + SHA Star. SHA is the angle from the First Point of Aries to the star.",
+                vcorr: "v Correction: A correction for planets and the moon because they don't move at exactly 15° per hour like the sun/stars. It adjusts the GHA.",
+                dcorr: "d Correction: Adjusts the Declination for the time elapsed since the last whole hour, based on how fast the body is moving North/South.",
+                lha: "Local Hour Angle (LHA): The angular distance of the body West of your meridian. LHA = GHA + East Lon (or - West Lon). Used to enter Sight Reduction Tables.",
+                dec: "Declination (Dec): The celestial equivalent of Latitude. The angular distance of the body North or South of the Celestial Equator.",
+                hc: "Computed Altitude (Hc): What the altitude *should* be if you were exactly at your Assumed Position. Calculated using spherical trigonometry.",
+                intercept: "Intercept (a): The difference between Observed (Ho) and Computed (Hc) altitude. Ho > Hc = Towards (T). Ho < Hc = Away (A). This is the distance in nm from the AP to the LOP.",
+                zn: "Azimuth (Zn): The true bearing to the body's Geographic Position (GP) from your Assumed Position. The Intercept is plotted along this line."
+            }
+        };
+        const NAV_STARS_LIST = Object.keys(CONSTANTS.STARS).sort();
+
+        const Formatters = {
+            angle: (degrees, isLatDec = false) => {
+                if (degrees === null || degrees === undefined || isNaN(degrees)) return "-";
+                let sign = "";
+                const absDeg = Math.abs(degrees);
+                if (isLatDec) {
+                    sign = degrees >= 0 ? "+" : "-"; 
+                } else {
+                    sign = degrees < 0 ? "-" : "";
+                }
+                let d = Math.floor(absDeg);
+                let m = (absDeg - d) * 60;
+                let mStr = m.toFixed(1);
+                
+                if (mStr === "60.0") {
+                    d += 1;
+                    mStr = "0.0";
+                }
+                
+                return `${sign}${d}° ${mStr.padStart(4, '0')}'`;
+            },
+            lat: (degrees) => {
+                if (degrees === null || degrees === undefined || isNaN(degrees)) return "-";
+                const suffix = degrees >= 0 ? "N" : "S";
+                const absDeg = Math.abs(degrees);
+                let d = Math.floor(absDeg);
+                let m = (absDeg - d) * 60;
+                let mStr = m.toFixed(1);
+                
+                if (mStr === "60.0") {
+                    d += 1;
+                    mStr = "0.0";
+                }
+                
+                return `${d}° ${mStr.padStart(4, '0')}' ${suffix}`;
+            },
+            dec: (degrees) => {
+                if (degrees === null || degrees === undefined || isNaN(degrees)) return "-";
+                const suffix = degrees >= 0 ? "N" : "S";
+                const absDeg = Math.abs(degrees);
+                let d = Math.floor(absDeg);
+                let m = (absDeg - d) * 60;
+                let mStr = m.toFixed(1);
+                
+                if (mStr === "60.0") {
+                    d += 1;
+                    mStr = "0.0";
+                }
+                
+                return `${d}° ${mStr.padStart(4, '0')}' ${suffix}`;
+            },
+            gha: (degrees) => {
+                if (degrees === null || degrees === undefined || isNaN(degrees)) return "-";
+                let dVal = degrees % 360;
+                if (dVal < 0) dVal += 360;
+                let d = Math.floor(dVal);
+                let m = (dVal - d) * 60;
+                let mStr = m.toFixed(1);
+                
+                if (mStr === "60.0") {
+                    d += 1;
+                    mStr = "0.0";
+                }
+                
+                return `${d}° ${mStr.padStart(4, '0')}'`;
+            },
+            inputDisplay: (val) => {
+                if (!val && val !== 0) return '';
+                let num = parseFloat(val);
+                if (isNaN(num)) return val;
+                let sign = num < 0 ? '-' : '';
+                num = Math.abs(num);
+                let d = Math.floor(num);
+                let m = ((num - d) * 60).toFixed(1);
+                if (parseFloat(m) === 60.0) { d++; m = '0.0'; }
+                return `${sign}${d}° ${m}'`;
+            },
+            decimal: (num, precision) => {
+                if (num === null || num === undefined || isNaN(num)) return "-";
+                return num.toFixed(precision);
+            }
+        };
+
+        // ==========================================
+        // MODULE 2: NAVIGATION MATH ENGINE
+        // ==========================================
+
+        const NavMath = {
+            precess: (raJ2000, decJ2000, date) => {
+                const yearsSince2000 = (date.getTime() - Date.UTC(2000, 0, 1, 12, 0, 0)) / (365.25 * 24 * 3600 * 1000);
+                const raRad = raJ2000 * 15 * (Math.PI / 180);
+                const decRad = decJ2000 * (Math.PI / 180);
+                const deltaRaSeconds = (3.075 + 1.336 * Math.sin(raRad) * Math.tan(decRad)) * yearsSince2000;
+                const deltaDecArcseconds = (20.04 * Math.cos(raRad)) * yearsSince2000;
+                return { ra: raJ2000 + (deltaRaSeconds / 3600), dec: decJ2000 + (deltaDecArcseconds / 3600) };
+            },
+
+            getBodyState: (date, bodyType, starName) => {
+                if (!window.Astronomy) return null;
+                const gast = window.Astronomy.SiderealTime(date); 
+                const ghaAries = (gast * 15) % 360;
+                const observer = new window.Astronomy.Observer(0, 0, -6378137);
+
+                let equ, dist, name, mag;
+                let gha = null, sha = null, dec = null;
+
+                try {
+                    if (bodyType === 'Sun') {
+                        name = 'Sun';
+                        equ = window.Astronomy.Equator(window.Astronomy.Body.Sun, date, observer, true, true);
+                        dist = equ.dist;
+                    } else if (bodyType === 'Moon') {
+                        name = 'Moon';
+                        equ = window.Astronomy.Equator(window.Astronomy.Body.Moon, date, observer, true, true);
+                        dist = equ.dist;
+                    } else if (CONSTANTS.PLANETS.includes(bodyType)) {
+                        name = bodyType;
+                        const body = window.Astronomy.Body[bodyType];
+                        equ = window.Astronomy.Equator(body, date, observer, true, true);
+                        const illum = window.Astronomy.Illumination(body, date);
+                        mag = illum.mag;
+                        dist = equ.dist;
+                    } 
+                    if (equ) {
+                        dec = equ.dec;
+                        let raDeg = equ.ra * 15;
+                        gha = ghaAries - raDeg;
+                        sha = 360 - raDeg;
+                    }
+                    if ((bodyType === 'Star' || bodyType === 'Aries') && starName) {
+                        name = starName;
+                        const starJ2000 = CONSTANTS.STARS[starName];
+                        if (starJ2000) {
+                            const starCurrent = NavMath.precess(starJ2000.ra, starJ2000.dec, date);
+                            const raDeg = starCurrent.ra * 15; 
+                            dec = starCurrent.dec;
+                            sha = 360 - raDeg;
+                            if (sha < 0) sha += 360;
+                            gha = ghaAries + sha;
+                            if (gha >= 360) gha -= 360;
+                        }
+                    }
+                    if (gha !== null) { if (gha < 0) gha += 360; if (gha >= 360) gha -= 360; }
+                    if (sha !== null) { if (sha < 0) sha += 360; if (sha >= 360) sha -= 360; }
+                    return { name, gha, dec, dist, mag, ghaAries, sha };
+                } catch (e) { return null; }
+            },
+
+            calculateAlmanac: (date, bodyType, starName) => {
+                if (!window.Astronomy) return null;
+                const wholeHourDate = new Date(date);
+                wholeHourDate.setUTCMinutes(0, 0, 0);
+                const nextHourDate = new Date(wholeHourDate.getTime() + 3600000);
+                const current = NavMath.getBodyState(wholeHourDate, bodyType, starName);
+                const next = NavMath.getBodyState(nextHourDate, bodyType, starName);
+
+                if (!current || !next) return null;
+
+                let v = null, dVal = null, hp = null, sd = null;
+
+                if (current.gha !== null && next.gha !== null) {
+                    let ghaDiff = next.gha - current.gha;
+                    if (ghaDiff < 0) ghaDiff += 360;
+                    if (bodyType === 'Moon') v = (ghaDiff - 14.316666) * 60; 
+                    else if (CONSTANTS.PLANETS.includes(bodyType)) v = (ghaDiff - 15.0) * 60;
+                    else if (bodyType === 'Sun') v = (ghaDiff - 15.0) * 60;
+
+                    if (current.dec !== null && next.dec !== null) dVal = (next.dec - current.dec) * 60;
+
+                    const Re = 6378.14; const AU = 149597870.7;
+                    if (current.dist) {
+                        const distKm = current.dist * AU;
+                        if (bodyType === 'Moon') {
+                            const hpRad = Math.asin(Re / distKm);
+                            hp = (hpRad * 180 / Math.PI) * 60; 
+                            sd = 0.2725 * hp;
+                        } else if (bodyType === 'Sun') {
+                             const R_sun = 696340;
+                             const sdRad = Math.asin(R_sun / distKm);
+                             sd = (sdRad * 180 / Math.PI) * 60; 
+                        }
+                    }
+                }
+                return { wholeHourTime: wholeHourDate, ...current, v, d: dVal, hp, sd };
+            },
+            
+            // Helper for Spherical Trig used by HO229
+            // Returns Z (Azimuth Angle) as 0-180 measured from the ELEVATED POLE.
+            // Zn is the True Azimuth (0-360) measured from North clockwise.
+            solveTriangle: (lat, dec, lha) => {
+                const toRad = deg => deg * Math.PI / 180;
+                const toDeg = rad => rad * 180 / Math.PI;
+                const latRad = toRad(lat);
+                const decRad = toRad(dec);
+                const lhaRad = toRad(lha);
+                
+                // Hc Calculation (Altitude)
+                const sinHc = Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(lhaRad);
+                let hcRad = Math.asin(sinHc);
+                let hc = toDeg(hcRad);
+                
+                // Z Calculation (Azimuth Angle)
+                // Standard Formula for Z relative to North Pole:
+                // cos Z = (sin Dec - sin Lat * sin Hc) / (cos Lat * cos Hc)
+                let numerator = Math.sin(decRad) - (Math.sin(latRad) * sinHc);
+                let denominator = Math.cos(latRad) * Math.cos(hcRad);
+                let cosZ = numerator / denominator;
+                
+                if (cosZ > 1) cosZ = 1; 
+                if (cosZ < -1) cosZ = -1;
+                
+                let zRaw = toDeg(Math.acos(cosZ)); // This is angle from North Pole (0..180)
+                
+                // H.O. 229 Z is measured from the ELEVATED POLE (N if Lat>0, S if Lat<0)
+                // If Lat is South, the Elevated Pole is South. 
+                // The raw formula gives distance from North. Distance from South is 180 - raw.
+                let z = (lat >= 0) ? zRaw : (180 - zRaw);
+                
+                // Calculate Zn (True Azimuth)
+                // Rules:
+                // N. Lat: LHA > 180 (East) -> Zn = Z
+                // N. Lat: LHA < 180 (West) -> Zn = 360 - Z
+                // S. Lat: LHA > 180 (East) -> Zn = 180 - Z
+                // S. Lat: LHA < 180 (West) -> Zn = 180 + Z
+                
+                let zn = 0;
+                if (lat >= 0) { // North
+                    zn = (lha > 180) ? z : 360 - z;
+                } else { // South
+                    zn = (lha > 180) ? 180 - z : 180 + z;
+                }
+                
+                return { hc, z, zn };
+            },
+            
+            // Core Sight Reduction Math
+            reduceSight: (obsData, almData) => {
+                const dt = obsData.dateTime ? new Date(obsData.dateTime) : new Date();
+                const minutes = dt.getUTCMinutes();
+                const seconds = dt.getUTCSeconds();
+                const decimalMinutes = minutes + (seconds / 60);
+                
+                const isStar = obsData.body && (CONSTANTS.STARS[obsData.body] || obsData.body === 'Aries');
+                const isMoon = obsData.body === 'Moon';
+                const isSun = obsData.body === 'Sun';
+
+                // Sun rate varies ~14.96-15.04°/hr through the year; use v-correction like planets
+                // Stars use sidereal rate; Moon uses lunar rate; Sun & planets use 15°/hr base + v
+                let rate = 15.0; if (isMoon) rate = 14.3166; if (isStar) rate = 15.04107; 
+                let ghaInc = decimalMinutes * (rate / 60.0);
+                let vCorr = 0;
+                if (isSun && almData.v != null) {
+                    vCorr = almData.v * (decimalMinutes / 60.0) / 60.0;
+                } else {
+                    vCorr = (almData.v || 0) * (decimalMinutes / 60.0) / 60.0;
+                }
+                let ghaFinal = 0;
+                
+                if (isStar && almData.ghaAries != null) {
+                    let ghaAriesTotal = almData.ghaAries + ghaInc; 
+                    ghaFinal = ghaAriesTotal + almData.sha;
+                } else {
+                    const baseGha = (almData.ghaWhole != null) ? almData.ghaWhole : almData.gha;
+                    if (baseGha != null) {
+                        ghaFinal = baseGha + ghaInc + vCorr;
+                    }
+                }
+                ghaFinal = ghaFinal % 360;
+
+                let dCorr = (almData.d || 0) * (decimalMinutes / 60.0) / 60.0;
+                const baseDec = (almData.decWhole !== undefined && almData.decWhole !== null) ? almData.decWhole : almData.dec;
+                let decFinal = (baseDec || 0) + dCorr;
+
+                let heMeters = parseFloat(obsData.he) || 0;
+                if (obsData.unitSystem === 'imperial') heMeters = heMeters * 0.3048;
+                const dip = 1.76 * Math.sqrt(heMeters);
+                const hsVal = (parseFloat(obsData.hsDeg)||0) + ((parseFloat(obsData.hsMin)||0)/60);
+                let ha = hsVal + (parseFloat(obsData.ie || 0)/60) - (dip/60);
+                
+                // Standard Refraction & Env Correction
+                const haAbs = Math.abs(ha);
+                const bennettArgDeg = haAbs + (7.31 / (haAbs + 4.4));
+                const bennettArgRad = bennettArgDeg * Math.PI / 180;
+                const refrStd = (1.0 / Math.tan(bennettArgRad)) / 60; 
+                
+                let presMb = parseFloat(obsData.pressure) || 1013;
+                let tempC = parseFloat(obsData.temperature) || 15;
+                if (obsData.unitSystem === 'imperial') {
+                    presMb = presMb * 33.8639; 
+                    tempC = (tempC - 32) * (5/9); 
+                }
+                const f = (presMb / 1010) * (283 / (273 + tempC));
+                const refrCorrected = refrStd * f;
+                const envCorr = refrStd - refrCorrected;
+
+                const corrRefr = -refrStd;
+                
+                // Semi-Diameter Correction with Limb Logic
+                let sdVal = (almData.sd || 0)/60;
+                // If Upper Limb ('U'), we subtract SD. Default/Lower ('L') adds SD.
+                if (obsData.limb === 'U') {
+                    sdVal = -sdVal;
+                }
+                const corrSD = (isSun || isMoon) ? sdVal : 0;
+
+                let corrPar = 0;
+                if (isMoon) {
+                    const haRad = Math.abs(ha) * Math.PI / 180; 
+                    const hpDeg = (almData.hp || 0) / 60;
+                    corrPar = hpDeg * Math.cos(haRad);
+                }
+                
+                const mainCorr = corrRefr + corrSD + corrPar;
+                let ho = ha + mainCorr + envCorr;
+
+                // LONGITUDE CALCULATION - STANDARD
+                let apLonVal = Math.abs((parseFloat(obsData.apLonDeg)||0) + ((parseFloat(obsData.apLonMin)||0)/60));
+                const lonDir = (obsData.apLonDir || 'W').toUpperCase();
+                if (lonDir === 'W') apLonVal = -apLonVal;
+                
+                let lha = ghaFinal + apLonVal;
+                while (lha < 0) lha += 360; while (lha >= 360) lha -= 360;
+
+                // LATITUDE CALCULATION - FIXED & ROBUST
+                // Ensure we take absolute value of inputs first, then apply sign based solely on Dir selector
+                let latVal = Math.abs((parseFloat(obsData.apLatDeg)||0) + ((parseFloat(obsData.apLatMin)||0)/60));
+                const latDir = (obsData.apLatDir || 'N').toUpperCase();
+                if (latDir === 'S') latVal = -latVal;
+
+                // Solve Triangle
+                const trig = NavMath.solveTriangle(latVal, decFinal, lha);
+                const intercept = (ho - trig.hc) * 60; 
+
+                return {
+                    ghaWhole: almData.ghaWhole, ghaAries: almData.ghaAries, sha: almData.sha,
+                    minutes, seconds, ghaInc, vCorr, ghaFinal, apLonVal, lha,
+                    decWhole: almData.decWhole, dCorr, decFinal, latVal, hc: trig.hc, intercept, zn: trig.zn,
+                    hsVal, dip, ha, mainCorr, corrRefr, corrSD, corrPar, envCorr, ho
+                };
+            },
+            
+            identify: (obsData) => {
+                const candidates = [];
+                if (!obsData.dateTime) return [];
+                const date = new Date(obsData.dateTime);
+                
+                // Calculate Sun position for proximity check
+                const sunAlm = NavMath.calculateAlmanac(date, 'Sun');
+                const sunRes = sunAlm ? NavMath.reduceSight({...obsData, body: 'Sun'}, sunAlm) : null;
+                const sunZn = sunRes ? sunRes.zn : null;
+                const sunHc = sunRes ? sunRes.hc : null;
+                
+                const checkVisibility = (res, name, type) => {
+                    // Body must be above horizon (Hc > 0)
+                    const isAboveHorizon = res.hc > 0;
+                    // Check angular distance from Sun (rough check using Zn difference)
+                    let sunDist = null;
+                    if (sunZn !== null && sunHc !== null && type !== 'Sun') {
+                        let znDiff = Math.abs(res.zn - sunZn);
+                        if (znDiff > 180) znDiff = 360 - znDiff;
+                        // Approximate angular separation
+                        sunDist = Math.sqrt(znDiff * znDiff + (res.hc - sunHc) * (res.hc - sunHc));
+                    }
+                    const isSunUp = sunHc !== null && sunHc > -6; // Civil twilight or brighter
+                    const tooCloseToSun = sunDist !== null && sunDist < 15;
+                    
+                    return {
+                        isAboveHorizon,
+                        sunDist: sunDist !== null ? Math.round(sunDist) : null,
+                        isSunUp,
+                        tooCloseToSun,
+                        // Stars/planets only visible during twilight or night (Sun below -6°)
+                        // unless they're very bright
+                        isDaylight: isSunUp && sunHc > 0,
+                    };
+                };
+                
+                CONSTANTS.PLANETS.forEach(p => {
+                    const alm = NavMath.calculateAlmanac(date, p);
+                    const res = NavMath.reduceSight({...obsData, body: p}, alm);
+                    if (Math.abs(res.intercept) <= 120) {
+                        const vis = checkVisibility(res, p, 'Planet');
+                        candidates.push({ name: p, type: 'Planet', ...res, diff: Math.abs(res.intercept), ...vis });
+                    }
+                });
+                
+                Object.keys(CONSTANTS.STARS).forEach(s => {
+                    const alm = NavMath.calculateAlmanac(date, 'Star', s);
+                    const res = NavMath.reduceSight({...obsData, body: s}, alm);
+                     if (Math.abs(res.intercept) <= 120) {
+                        const vis = checkVisibility(res, s, 'Star');
+                        candidates.push({ name: s, type: 'Star', ...res, diff: Math.abs(res.intercept), ...vis });
+                    }
+                });
+                
+                // Sort: visible above horizon first, then by intercept
+                return candidates.sort((a, b) => {
+                    if (a.isAboveHorizon && !b.isAboveHorizon) return -1;
+                    if (!a.isAboveHorizon && b.isAboveHorizon) return 1;
+                    return a.diff - b.diff;
+                });
+            }
+        };
+
+        // ==========================================
+        // MODULE 3: MODALS & UI UTILS
+        // ==========================================
+
+        const HO229Modal = ({ lat, lha, dec, onClose }) => {
+            const entryLat = Math.round(lat);
+            const entryLHA = Math.round(lha);
+            const entryDecBase = Math.floor(Math.abs(dec));
+            const decMin = (Math.abs(dec) - entryDecBase) * 60;
+            const sameName = (lat >= 0 && dec >= 0) || (lat < 0 && dec < 0);
+            
+            // Logic: Page = LHA, Columns = Latitude, Rows = Declination (Corrected per H.O. 229 standard)
+            const solve = (l, d, lh) => NavMath.solveTriangle(l, d, lh);
+            
+            // --- FIX: Robust Sign Logic for Summary Calculation ---
+            // Determine the actual signed Declination to use for the Base and Next calculations
+            // based on the Latitude sign and the Same/Contrary name status.
+            
+            const latSign = entryLat >= 0 ? 1 : -1;
+            
+            // If Same Name, Dec sign must match Lat sign.
+            // If Contrary Name, Dec sign must be opposite Lat sign.
+            const decSign = sameName ? latSign : -latSign;
+            
+            const calcDecBase = entryDecBase * decSign;
+            const calcDecNext = (entryDecBase + 1) * decSign;
+
+            // Base Solution (Tabulated values for integer Lat/Dec)
+            const baseSol = solve(entryLat, calcDecBase, entryLHA);
+            
+            // Next Solution (for 'd' calculation)
+            // 'd' is the change in altitude for a 1 degree increase in Declination magnitude
+            const nextSol = solve(entryLat, calcDecNext, entryLHA);
+            
+            const dVal = nextSol.hc - baseSol.hc;
+            const dSign = dVal >= 0 ? '+' : '-';
+            const corr = (decMin / 60) * dVal;
+            const finalHc = baseSol.hc + corr;
+
+            // Generate Columns (LATITUDE) - Standard H.O. 229 puts Lat across top
+            const absLat = Math.abs(entryLat);
+            const startLat = Math.max(0, absLat - 3);
+            const lats = [startLat, startLat+1, startLat+2, startLat+3, startLat+4, startLat+5, startLat+6];
+
+            // Generate Rows (DECLINATION) - Standard H.O. 229 puts Dec down side
+            let startDec = Math.max(0, entryDecBase - 3);
+            const rows = Array.from({length: 8}, (_, i) => startDec + i);
+
+            // Determine Rule Context for Explanation
+            const isNorth = lat >= 0;
+            const isEast = lha > 180; // LHA 180-360 is East, 0-180 is West
+            
+            let ruleTitle = "";
+            let ruleFormula = "";
+            let ruleDesc = "";
+
+            if (isNorth) {
+                if (isEast) {
+                    ruleTitle = "North Lat, LHA East";
+                    ruleFormula = `Zn = Z (${baseSol.z.toFixed(1)}°)`;
+                    ruleDesc = "Body is East. Z measured from North.";
+                } else {
+                    ruleTitle = "North Lat, LHA West";
+                    ruleFormula = `Zn = 360° - Z (${baseSol.z.toFixed(1)}°)`;
+                    ruleDesc = "Body is West. Z measured from North.";
+                }
+            } else {
+                if (isEast) {
+                    ruleTitle = "South Lat, LHA East";
+                    ruleFormula = `Zn = 180° - Z (${baseSol.z.toFixed(1)}°)`;
+                    ruleDesc = "Body is East. Z measured from South.";
+                } else {
+                    ruleTitle = "South Lat, LHA West";
+                    ruleFormula = `Zn = 180° + Z (${baseSol.z.toFixed(1)}°)`;
+                    ruleDesc = "Body is West. Z measured from South.";
+                }
+            }
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-2">
+                    <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[95vh] overflow-hidden">
+                        <div className="bg-slate-900 text-white p-4 flex justify-between items-center shrink-0">
+                            <h2 className="font-bold text-lg font-mono tracking-wider">H.O. 229 SIMULATOR</h2>
+                            <button onClick={onClose} className="hover:text-red-400"><i data-lucide="x" className="w-6 h-6"></i></button>
+                        </div>
+                        <div className="flex-grow overflow-auto bg-slate-200 p-4">
+                            <div className="ho229-page p-6 min-w-[800px] mx-auto bg-[#fdfbf7] border shadow-lg">
+                                <div className="flex justify-between border-b-2 border-black mb-4 pb-2">
+                                    <div className="text-3xl font-bold ho-header">L.H.A. {entryLHA}&deg;</div>
+                                    <div className="text-right font-mono font-bold">
+                                        <div>Dec. {sameName ? 'SAME' : 'CONTRARY'} Name</div>
+                                    </div>
+                                </div>
+                                <table className="w-full border-collapse border border-black text-center text-sm font-mono">
+                                    <thead>
+                                        {/* Added LATITUDE Super Header for Clarity */}
+                                        <tr className="bg-gray-100 border-b border-black">
+                                            <th className="border-r border-black p-1 bg-gray-200 w-16">DEC</th>
+                                            {lats.map(l => (
+                                                <th key={l} colSpan="3" className="border-r border-black py-1 font-bold text-slate-600 tracking-widest bg-gray-200">
+                                                    LAT {l}&deg;
+                                                </th>
+                                            ))}
+                                        </tr>
+                                        <tr className="bg-gray-50 border-b border-black text-xs">
+                                            <th className="border-r border-black"></th>
+                                            {lats.map(l => (
+                                                <React.Fragment key={l}>
+                                                    <th className="w-12">Hc</th><th className="w-10">d</th><th className="w-12 border-r border-black">Z</th>
+                                                </React.Fragment>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rows.map(rowDec => (
+                                            <tr key={rowDec} className={rowDec === entryDecBase ? "bg-yellow-50/50" : ""}>
+                                                <th className="border-r border-black py-2 font-bold bg-white">{rowDec}&deg;</th>
+                                                {lats.map(colLatAbs => {
+                                                    const isTarget = colLatAbs === absLat && rowDec === entryDecBase;
+                                                    
+                                                    // Calculation: Iterate LAT (Cols) against DEC (Rows) for FIXED LHA (Page)
+                                                    const calcLat = lat >= 0 ? colLatAbs : -colLatAbs;
+                                                    const cellDecMag = rowDec;
+                                                    // Use sameName context to determine sign of cell Declination relative to cell Latitude
+                                                    const cellDec = sameName ? (calcLat >= 0 ? cellDecMag : -cellDecMag) : (calcLat >= 0 ? -cellDecMag : cellDecMag);
+                                                    
+                                                    const s = solve(calcLat, cellDec, entryLHA);
+                                                    
+                                                    // d calculation logic
+                                                    const nextDecMag = rowDec + 1;
+                                                    const nextCellDec = sameName ? (calcLat >= 0 ? nextDecMag : -nextDecMag) : (calcLat >= 0 ? -nextDecMag : nextDecMag);
+                                                    const sNext = solve(calcLat, nextCellDec, entryLHA);
+                                                    
+                                                    const dCell = sNext.hc - s.hc;
+                                                    const hcD = Math.floor(s.hc);
+                                                    const hcM = (s.hc - hcD) * 60;
+                                                    
+                                                    return (
+                                                        <React.Fragment key={colLatAbs}>
+                                                            <td className={`border-r border-slate-300 ${isTarget ? 'font-bold text-blue-900' : ''}`}>
+                                                                {isTarget ? <span className="handwritten-circle">{hcD}&deg; {hcM.toFixed(1)}'</span> : `${hcD}° ${hcM.toFixed(1)}'`}
+                                                            </td>
+                                                            <td className={`border-r border-slate-300 text-xs italic text-slate-500 ${isTarget ? 'font-bold' : ''}`}>
+                                                                {dCell >= 0 ? '+' : ''}{Math.abs(dCell*60).toFixed(1)}
+                                                            </td>
+                                                            <td className={`border-r border-black ${isTarget ? 'font-bold' : ''}`}>
+                                                                {s.z.toFixed(1)}
+                                                            </td>
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 border-t border-slate-300 text-sm font-mono shrink-0">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {/* Interpolation Summary */}
+                                <div className="grid grid-cols-4 gap-4 text-center md:text-left items-center">
+                                    <div><strong className="block text-xs text-slate-500">Tab. Hc (ht)</strong> {Formatters.angle(baseSol.hc)}</div>
+                                    <div><strong className="block text-xs text-slate-500">d (Diff 1°)</strong> {dSign}{Math.abs(dVal*60).toFixed(1)}'</div>
+                                    <div><strong className="block text-xs text-slate-500">Correction</strong> {dSign}{Math.abs(corr*60).toFixed(1)}'</div>
+                                    <div><strong className="block text-xs text-slate-500">Final Hc</strong> <span className="text-blue-700 font-bold">{Formatters.angle(finalHc)}</span></div>
+                                </div>
+
+                                {/* Azimuth Rules Explanation */}
+                                <div className="bg-blue-50 border border-blue-100 rounded p-3 text-xs">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <i data-lucide="compass" className="w-4 h-4 text-blue-500"></i>
+                                        <span className="font-bold text-blue-800 uppercase tracking-wide">Azimuth Rule: {ruleTitle}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600">{ruleDesc}</span>
+                                        <span className="font-mono font-bold text-lg bg-white px-2 py-1 rounded border border-blue-200">
+                                            {ruleFormula} = <span className="text-blue-600">{baseSol.zn.toFixed(1)}°</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const NotificationModal = ({ message, type, onConfirm, onCancel }) => {
+            return (
+                <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full">
+                        <div className="flex items-center gap-3 mb-4">
+                            {type === 'confirm' ? (
+                                <div className="p-2 bg-yellow-100 rounded-full text-yellow-600"><i data-lucide="alert-circle" className="w-6 h-6"></i></div>
+                            ) : (
+                                <div className="p-2 bg-blue-100 rounded-full text-blue-600"><i data-lucide="info" className="w-6 h-6"></i></div>
+                            )}
+                            <h3 className="text-lg font-bold">{type === 'confirm' ? 'Confirmation' : 'Notice'}</h3>
+                        </div>
+                        <p className="text-slate-600 mb-6">{message}</p>
+                        <div className="flex justify-end gap-2">
+                            {type === 'confirm' && (
+                                <button onClick={onCancel} className="px-4 py-3 text-slate-500 hover:bg-slate-100 rounded font-bold">Cancel</button>
+                            )}
+                            <button onClick={onConfirm} className="px-4 py-3 bg-blue-600 text-white hover:bg-blue-500 rounded font-bold shadow">
+                                {type === 'confirm' ? 'Confirm' : 'OK'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const IdentifyModal = ({ obsData, onClose, onSelect }) => {
+            const [results, setResults] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                setTimeout(() => {
+                    const c = NavMath.identify(obsData);
+                    setResults(c);
+                    setLoading(false);
+                }, 100);
+            }, [obsData]);
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-300 w-full max-w-2xl flex flex-col max-h-[80vh]">
+                        <div className="bg-slate-900 text-white p-4 flex justify-between items-center rounded-t-xl">
+                            <div className="flex items-center gap-2">
+                                <i data-lucide="search" className="w-5 h-5"></i>
+                                <h3 className="font-bold text-lg">Identify Body</h3>
+                            </div>
+                            <button onClick={onClose} className="hover:text-slate-300 p-2"><i data-lucide="x" className="w-6 h-6"></i></button>
+                        </div>
+                        <div className="p-4 bg-slate-50 border-b text-sm text-slate-600">
+                            Listing bodies within 2&deg; (120') of observed altitude. Sorted by probability (intercept).
+                        </div>
+                        <div className="flex-grow overflow-y-auto p-0">
+                            {loading ? (
+                                <div className="p-12 text-center text-slate-400">Calculating candidates...</div>
+                            ) : results.length === 0 ? (
+                                <div className="p-12 text-center text-slate-500">No bodies found within 2&deg; of Hs {obsData.hsDeg}&deg; {obsData.hsMin}'.<br/>Check your time, position and sextant altitude.</div>
+                            ) : (
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-100 text-slate-500 uppercase text-xs sticky top-0">
+                                        <tr>
+                                            <th className="px-4 py-3">Body</th>
+                                            <th className="px-4 py-3">Type</th>
+                                            <th className="px-4 py-3 text-center">Vis</th>
+                                            <th className="px-4 py-3 text-right">Zn</th>
+                                            <th className="px-4 py-3 text-right">Hc</th>
+                                            <th className="px-4 py-3 text-right">Diff</th>
+                                            <th className="px-4 py-3 text-center">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {results.map((r, i) => {
+                                            const belowHorizon = !r.isAboveHorizon;
+                                            const rowClass = belowHorizon 
+                                                ? "opacity-40" 
+                                                : r.tooCloseToSun ? "bg-amber-50/50" : "hover:bg-blue-50";
+                                            let visIcon = "✓";
+                                            let visColor = "text-green-600";
+                                            let visTitle = "Above horizon, visible";
+                                            if (belowHorizon) {
+                                                visIcon = "✗"; visColor = "text-red-500"; visTitle = "Below horizon";
+                                            } else if (r.isDaylight && r.type === 'Star') {
+                                                visIcon = "☀"; visColor = "text-amber-500"; visTitle = "Daylight — star unlikely visible";
+                                            } else if (r.tooCloseToSun) {
+                                                visIcon = "⊙"; visColor = "text-amber-500"; visTitle = `Close to Sun (~${r.sunDist}°)`;
+                                            }
+                                            return (
+                                            <tr key={i} className={`transition-colors ${rowClass}`}>
+                                                <td className="px-4 py-3 font-bold text-slate-800">{r.name}</td>
+                                                <td className="px-4 py-3 text-slate-500">{r.type}</td>
+                                                <td className={`px-4 py-3 text-center font-bold ${visColor}`} title={visTitle}>{visIcon}</td>
+                                                <td className="px-4 py-3 text-right font-mono text-blue-600">{Formatters.decimal(r.zn, 1)}&deg;</td>
+                                                <td className="px-4 py-3 text-right font-mono">{Formatters.angle(r.hc)}</td>
+                                                <td className="px-4 py-3 text-right font-mono font-bold">{Formatters.decimal(r.diff, 1)}'</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <button onClick={() => onSelect(r)} className="text-xs bg-green-100 text-green-700 px-3 py-2 rounded border border-green-200 hover:bg-green-200 font-bold">SELECT</button>
+                                                </td>
+                                            </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const HelpIcon = ({ helpKey, isVisible, onShow }) => {
+            if (!isVisible) return null;
+            return (
+                <button 
+                    onClick={(e) => { e.preventDefault(); onShow(helpKey); }}
+                    className="ml-1 text-purple-500 hover:text-purple-700 help-icon p-1"
+                    title="Click for explanation"
+                >
+                    <i data-lucide="help-circle" className="w-4 h-4"></i>
+                </button>
+            );
+        };
+
+        const StudyModal = ({ helpKey, onClose }) => {
+            const text = CONSTANTS.HELP_TEXT[helpKey];
+            return (
+                 <div className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full border-l-4 border-purple-500 relative">
+                        <button onClick={onClose} className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 p-2"><i data-lucide="x" className="w-6 h-6"></i></button>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-purple-100 rounded-full text-purple-600"><i data-lucide="graduation-cap" className="w-6 h-6"></i></div>
+                            <h3 className="text-lg font-bold text-slate-800">Study Guide</h3>
+                        </div>
+                        <p className="text-slate-700 leading-relaxed text-sm">{text}</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const PlotterModal = ({ lops, onClose }) => {
+            const canvasRef = useRef(null);
+            const [cursorPos, setCursorPos] = useState({ lat: null, lon: null });
+            const [dims, setDims] = useState({ w: 0, h: 0 });
+            const [scale, setScale] = useState(10); 
+            const [viewCenter, setViewCenter] = useState(null);
+
+            // Calculate Centroid (Initial Center)
+            const calculatedCenter = useMemo(() => {
+                const advLops = calculateAdvancedLops(lops);
+                if (advLops.length === 0) return { lat: 0, lon: 0 };
+                let sumLat = 0, sumLon = 0, count = 0;
+                advLops.forEach(lop => { 
+                    if(!isNaN(lop.advLat) && !isNaN(lop.advLon)){
+                        sumLat += lop.advLat; sumLon += lop.advLon; 
+                        count++;
+                    }
+                });
+                if (count === 0) return { lat: 0, lon: 0 };
+                return { lat: sumLat / count, lon: sumLon / count };
+            }, [lops]);
+
+            // Compute Fix: find LOP intersections and Most Probable Position (MPP)
+            const fixData = useMemo(() => {
+                const advLops = calculateAdvancedLops(lops);
+                if (advLops.length < 2) return null;
+                
+                const intersections = [];
+                // Find all pairwise LOP intersections
+                for (let i = 0; i < advLops.length; i++) {
+                    for (let j = i + 1; j < advLops.length; j++) {
+                        const a = advLops[i];
+                        const b = advLops[j];
+                        if (isNaN(a.zn) || isNaN(a.intercept) || isNaN(b.zn) || isNaN(b.intercept)) continue;
+                        
+                        // LOP i: starts at (advLat_i, advLon_i), intercept along Zn_i, then perpendicular
+                        // Point on LOP = AP + intercept along Zn, then line perpendicular to Zn
+                        const toRad = d => d * Math.PI / 180;
+                        const cosLatA = Math.cos(toRad(a.advLat));
+                        const cosLatB = Math.cos(toRad(b.advLat));
+                        
+                        // Intercept point for LOP A
+                        const znRadA = toRad(a.zn);
+                        const intLatA = a.advLat + (a.intercept / 60) * Math.cos(znRadA);
+                        const intLonA = a.advLon + (a.intercept / 60) * Math.sin(znRadA) / Math.max(0.01, cosLatA);
+                        
+                        // Intercept point for LOP B
+                        const znRadB = toRad(b.zn);
+                        const intLatB = b.advLat + (b.intercept / 60) * Math.cos(znRadB);
+                        const intLonB = b.advLon + (b.intercept / 60) * Math.sin(znRadB) / Math.max(0.01, cosLatB);
+                        
+                        // LOP direction (perpendicular to Zn)
+                        const dirA = toRad(a.zn + 90);
+                        const dirB = toRad(b.zn + 90);
+                        
+                        // Direction vectors in lat/lon minutes
+                        const dxA = Math.sin(dirA) / Math.max(0.01, Math.cos(toRad(intLatA)));
+                        const dyA = Math.cos(dirA);
+                        const dxB = Math.sin(dirB) / Math.max(0.01, Math.cos(toRad(intLatB)));
+                        const dyB = Math.cos(dirB);
+                        
+                        // Solve: intA + t*dirA = intB + s*dirB
+                        // dyA*t - dyB*s = intLatB - intLatA
+                        // dxA*t - dxB*s = intLonB - intLonA
+                        const det = dxA * (-dyB) - (-dxB) * dyA;
+                        if (Math.abs(det) < 1e-10) continue; // Parallel LOPs
+                        
+                        const dLat = intLatB - intLatA;
+                        const dLon = intLonB - intLonA;
+                        const t = ((-dyB) * dLon - (-dxB) * dLat) / det;
+                        
+                        const fixLat = intLatA + t * dyA;
+                        const fixLon = intLonA + t * dxA;
+                        
+                        // Sanity check: intersection should be somewhat near the APs
+                        const avgLat = (a.advLat + b.advLat) / 2;
+                        const avgLon = (a.advLon + b.advLon) / 2;
+                        const distFromCenter = Math.sqrt((fixLat - avgLat)**2 + (fixLon - avgLon)**2);
+                        if (distFromCenter < 5) { // Within 5 degrees
+                            intersections.push({ lat: fixLat, lon: fixLon, lop1: a.body, lop2: b.body });
+                        }
+                    }
+                }
+                
+                if (intersections.length === 0) return null;
+                
+                // Most Probable Position = centroid of all intersections
+                const mppLat = intersections.reduce((s, p) => s + p.lat, 0) / intersections.length;
+                const mppLon = intersections.reduce((s, p) => s + p.lon, 0) / intersections.length;
+                
+                return { intersections, mpp: { lat: mppLat, lon: mppLon } };
+            }, [lops]);
+
+            // Sync View Center on Init
+            useEffect(() => {
+                if (!viewCenter && calculatedCenter.lat !== 0) {
+                    setViewCenter(calculatedCenter);
+                }
+            }, [calculatedCenter]);
+
+            // Resize Handler
+            useEffect(() => {
+                const handleResize = () => {
+                    setDims({ w: window.innerWidth, h: window.innerHeight - 120 }); // Adjusted for mobile header
+                };
+                handleResize();
+                window.addEventListener('resize', handleResize);
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+
+            // Ref to hold state for native event listeners (prevents stale closures and frequent re-binding)
+            const stateRef = useRef({ 
+                scale, viewCenter, calculatedCenter, dims,
+                isDragging: false, startX: 0, startY: 0, 
+                startPinchDist: 0, lastScale: 10 
+            });
+
+            // Update ref when state changes
+            useEffect(() => {
+                stateRef.current.scale = scale;
+                stateRef.current.viewCenter = viewCenter;
+                stateRef.current.calculatedCenter = calculatedCenter;
+                stateRef.current.dims = dims;
+            }, [scale, viewCenter, calculatedCenter, dims]);
+            
+            // Reusable LOP logic
+            function calculateAdvancedLops(lopsList) {
+                if (lopsList.length === 0) return [];
+                const latestTime = Math.max(...lopsList.map(lop => new Date(lop.time).getTime()));
+                return lopsList.map(lop => {
+                    const lopTime = new Date(lop.time).getTime();
+                    const hoursDiff = (latestTime - lopTime) / 3600000; 
+                    const dist = (parseFloat(lop.speed) || 0) * hoursDiff; 
+                    const crsRad = (parseFloat(lop.course) || 0) * Math.PI / 180;
+                    const getCoord = (deg, min, oldVal) => {
+                        if (oldVal !== undefined && deg === undefined) return parseFloat(oldVal);
+                        return (parseFloat(deg) || 0) + ((parseFloat(min) || 0) / 60);
+                    };
+                    const lat1 = getCoord(lop.apLatDeg, lop.apLatMin, lop.apLat);
+                    const lon1 = getCoord(lop.apLonDeg, lop.apLonMin, lop.apLon);
+                    const dLat = (dist * Math.cos(crsRad)) / 60;
+                    const dLon = (dist * Math.sin(crsRad)) / (60 * Math.max(0.01, Math.cos(lat1 * Math.PI / 180)));
+                    const safeLat1 = isNaN(lat1) ? 0 : lat1;
+                    const safeLon1 = isNaN(lon1) ? 0 : lon1;
+                    return { 
+                        ...lop, 
+                        origLat: safeLat1, 
+                        origLon: safeLon1,
+                        advLat: safeLat1 + (isNaN(dLat) ? 0 : dLat), 
+                        advLon: safeLon1 + (isNaN(dLon) ? 0 : dLon), 
+                        isAdvanced: Math.abs(hoursDiff) > (1/60),
+                        zn: parseFloat(lop.zn),
+                        intercept: parseFloat(lop.intercept)
+                    };
+                });
+            }
+
+            // Drawing Logic
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas || dims.w === 0) return;
+                const ctx = canvas.getContext('2d');
+                const width = dims.w;
+                const height = dims.h;
+                
+                // Clear
+                ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, width, height);
+
+                const center = viewCenter || calculatedCenter;
+                if (isNaN(center.lat) || isNaN(center.lon)) return;
+
+                const cx = width / 2;
+                const cy = height / 2;
+                const midLatRad = (center.lat * Math.PI) / 180;
+                const cosLat = Math.max(0.01, Math.cos(midLatRad));
+
+                // Grid
+                ctx.strokeStyle = '#e2e8f0'; 
+                ctx.lineWidth = 1;
+                ctx.font = '12px sans-serif';
+                ctx.fillStyle = '#94a3b8';
+
+                // Lat Grid
+                const degLatStart = Math.floor(center.lat - (height / 2 / scale / 60));
+                const degLatEnd = Math.ceil(center.lat + (height / 2 / scale / 60));
+                for (let l = degLatStart; l <= degLatEnd; l++) {
+                    const y = cy + (center.lat - l) * 60 * scale;
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+                    ctx.fillText(`${Math.abs(l)}°${l>=0?'N':'S'}`, 5, y - 2);
+                }
+
+                // Lon Grid
+                const degLonStart = Math.floor(center.lon - (width / 2 / scale / 60 / cosLat));
+                const degLonEnd = Math.ceil(center.lon + (width / 2 / scale / 60 / cosLat));
+                for (let l = degLonStart; l <= degLonEnd; l++) {
+                    const x = cx + (l - center.lon) * 60 * cosLat * scale;
+                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                    ctx.fillText(`${Math.abs(l)}°`, x + 2, height - 5);
+                }
+
+                // Center Cross (View Center)
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.beginPath(); ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10); ctx.stroke();
+
+                // LOPs
+                const advancedLops = calculateAdvancedLops(lops);
+                advancedLops.forEach(lop => {
+                    if (isNaN(lop.zn) || isNaN(lop.intercept) || isNaN(lop.advLat)) return;
+
+                    let startX, startY;
+                    if (lop.isAdvanced) {
+                        const origY = cy + (center.lat - lop.origLat) * 60 * scale;
+                        const origX = cx + (lop.origLon - center.lon) * 60 * cosLat * scale;
+                        ctx.beginPath(); ctx.arc(origX, origY, 3, 0, 2*Math.PI); ctx.fillStyle = '#cbd5e1'; ctx.fill(); 
+                        
+                        const advY = cy + (center.lat - lop.advLat) * 60 * scale;
+                        const advX = cx + (lop.advLon - center.lon) * 60 * cosLat * scale;
+                        ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.strokeStyle = '#cbd5e1'; 
+                        ctx.moveTo(origX, origY); ctx.lineTo(advX, advY); ctx.stroke(); ctx.setLineDash([]);
+                        
+                        startX = advX; startY = advY;
+                    } else {
+                        startX = cx + (lop.advLon - center.lon) * 60 * cosLat * scale;
+                        startY = cy + (center.lat - lop.advLat) * 60 * scale;
+                    }
+
+                    // AP Dot
+                    ctx.beginPath(); ctx.arc(startX, startY, 5, 0, 2*Math.PI); ctx.fillStyle = 'blue'; ctx.fill();
+                    
+                    // Intercept Line
+                    const znRad = lop.zn * Math.PI / 180;
+                    const intDX = lop.intercept * scale * Math.sin(znRad);
+                    const intDY = -lop.intercept * scale * Math.cos(znRad);
+                    const intX = startX + intDX;
+                    const intY = startY + intDY;
+
+                    ctx.beginPath(); ctx.setLineDash([2, 2]); ctx.strokeStyle = '#64748b';
+                    ctx.moveTo(startX, startY); ctx.lineTo(intX, intY); ctx.stroke(); ctx.setLineDash([]);
+
+                    // LOP Perpendicular
+                    const lopLen = 2000 * scale; // Make infinite essentially
+                    const lopDX = Math.cos(znRad) * lopLen;
+                    const lopDY = Math.sin(znRad) * lopLen;
+
+                    ctx.beginPath(); ctx.strokeStyle = lop.isAdvanced ? '#ef4444' : '#dc2626'; 
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(intX - lopDX, intY - lopDY);
+                    ctx.lineTo(intX + lopDX, intY + lopDY);
+                    ctx.stroke();
+
+                    // NEW: Draw Label along LOP
+                    ctx.fillStyle = 'black';
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = 'white'; // Stroke for readability over lines
+                    ctx.lineJoin = 'round';
+
+                    // Offset label along the positive LOP vector (Zn + 90)
+                    const labelOffset = 60; 
+                    const labelX = intX + Math.cos(znRad) * labelOffset;
+                    const labelY = intY + Math.sin(znRad) * labelOffset;
+                    
+                    ctx.strokeText(lop.body, labelX, labelY);
+                    ctx.fillText(lop.body, labelX, labelY);
+                });
+
+                // Draw Fix Intersections & MPP
+                if (fixData) {
+                    // Draw intersection points (small diamonds)
+                    fixData.intersections.forEach(pt => {
+                        const px = cx + (pt.lon - center.lon) * 60 * cosLat * scale;
+                        const py = cy + (center.lat - pt.lat) * 60 * scale;
+                        const sz = 6;
+                        ctx.beginPath();
+                        ctx.moveTo(px, py - sz); ctx.lineTo(px + sz, py); ctx.lineTo(px, py + sz); ctx.lineTo(px - sz, py);
+                        ctx.closePath();
+                        ctx.fillStyle = '#f59e0b'; ctx.fill();
+                        ctx.strokeStyle = '#92400e'; ctx.lineWidth = 1; ctx.stroke();
+                    });
+                    
+                    // Draw MPP (Most Probable Position) — larger star marker
+                    const mppX = cx + (fixData.mpp.lon - center.lon) * 60 * cosLat * scale;
+                    const mppY = cy + (center.lat - fixData.mpp.lat) * 60 * scale;
+                    
+                    // Star shape
+                    const drawStar = (x, y, r1, r2, points) => {
+                        ctx.beginPath();
+                        for (let i = 0; i < points * 2; i++) {
+                            const r = i % 2 === 0 ? r1 : r2;
+                            const angle = (Math.PI / points) * i - Math.PI / 2;
+                            const px = x + r * Math.cos(angle);
+                            const py = y + r * Math.sin(angle);
+                            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                        }
+                        ctx.closePath();
+                    };
+                    
+                    drawStar(mppX, mppY, 12, 5, 5);
+                    ctx.fillStyle = '#dc2626'; ctx.fill();
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+                    
+                    // Label
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.fillStyle = '#dc2626';
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+                    ctx.strokeText('FIX', mppX + 14, mppY + 4);
+                    ctx.fillText('FIX', mppX + 14, mppY + 4);
+                }
+
+                // Draw Compass Rose (top-left area)
+                const roseX = 60;
+                const roseY = 60;
+                const roseR = 35;
+                ctx.save();
+                ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.arc(roseX, roseY, roseR, 0, 2*Math.PI); ctx.stroke();
+                // Cardinal directions
+                const cardinals = [{label:'N', angle:0}, {label:'E', angle:90}, {label:'S', angle:180}, {label:'W', angle:270}];
+                ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                cardinals.forEach(c => {
+                    const a = c.angle * Math.PI / 180;
+                    // Tick
+                    const ix = roseX + Math.sin(a) * (roseR - 6);
+                    const iy = roseY - Math.cos(a) * (roseR - 6);
+                    const ox = roseX + Math.sin(a) * roseR;
+                    const oy = roseY - Math.cos(a) * roseR;
+                    ctx.beginPath(); ctx.moveTo(ix, iy); ctx.lineTo(ox, oy); ctx.stroke();
+                    // Label
+                    const lx = roseX + Math.sin(a) * (roseR + 12);
+                    const ly = roseY - Math.cos(a) * (roseR + 12);
+                    ctx.fillStyle = '#334155'; ctx.strokeStyle = 'white'; ctx.lineWidth = 3;
+                    ctx.strokeText(c.label, lx, ly); ctx.fillText(c.label, lx, ly);
+                });
+                // North arrow
+                ctx.beginPath(); ctx.fillStyle = '#dc2626';
+                ctx.moveTo(roseX, roseY - roseR + 8); ctx.lineTo(roseX - 4, roseY - 6); ctx.lineTo(roseX + 4, roseY - 6);
+                ctx.closePath(); ctx.fill();
+                ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+                ctx.restore();
+                
+                // Draw Scale Bar (bottom-left)
+                const scaleBarNm = 1; // 1 nautical mile = 1 arcminute of latitude
+                const scaleBarPx = scaleBarNm * 60 * scale / 60; // 1 nm = 1' lat, scale px per arcmin = scale
+                const barLen = scale; // pixels for 1 nm
+                if (barLen > 10 && barLen < width / 2) {
+                    const barX = 20;
+                    const barY = height - 25;
+                    ctx.strokeStyle = '#334155'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(barX, barY); ctx.lineTo(barX + barLen, barY); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(barX, barY - 4); ctx.lineTo(barX, barY + 4); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(barX + barLen, barY - 4); ctx.lineTo(barX + barLen, barY + 4); ctx.stroke();
+                    ctx.font = '11px sans-serif'; ctx.fillStyle = '#334155'; ctx.textAlign = 'center';
+                    ctx.fillText('1 nm', barX + barLen / 2, barY - 8);
+                    ctx.textAlign = 'start';
+                }
+            }, [lops, viewCenter, calculatedCenter, dims, scale, fixData]);
+
+            const handleZoomIn = () => setScale(prev => Math.min(prev * 1.2, 100));
+            const handleZoomOut = () => setScale(prev => Math.max(prev / 1.2, 1));
+
+            // Native Event Listeners for Interaction (Passive: False required for mobile pinch)
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const getCenter = () => stateRef.current.viewCenter || stateRef.current.calculatedCenter;
+                const getCosLat = (lat) => Math.max(0.01, Math.cos(lat * Math.PI / 180));
+
+                const handleWheel = (e) => {
+                    e.preventDefault();
+                    const delta = -Math.sign(e.deltaY);
+                    const factor = 1.1;
+                    const currentScale = stateRef.current.scale;
+                    let newScale = delta > 0 ? currentScale * factor : currentScale / factor;
+                    newScale = Math.max(1, Math.min(100, newScale));
+                    setScale(newScale);
+                };
+
+                const handleTouchMove = (e) => {
+                    e.preventDefault(); // Critical for preventing page scroll on mobile
+                    const { scale, dims } = stateRef.current;
+                    
+                    if (e.touches.length === 1 && stateRef.current.isDragging) {
+                        const clientX = e.touches[0].clientX;
+                        const clientY = e.touches[0].clientY;
+                        
+                        const dx = clientX - stateRef.current.startX;
+                        const dy = clientY - stateRef.current.startY;
+                        
+                        const center = getCenter();
+                        const cosLat = getCosLat(center.lat);
+
+                        const dLat = dy / scale / 60; 
+                        const dLon = -dx / scale / 60 / cosLat; // Drag right -> Move view Left (West)
+
+                        setViewCenter({ lat: center.lat + dLat, lon: center.lon + dLon });
+                        
+                        stateRef.current.startX = clientX;
+                        stateRef.current.startY = clientY;
+                        
+                        // Cursor Update Logic
+                        const dLatMinCursor = -((clientY - canvas.getBoundingClientRect().top - dims.h/2) / scale); 
+                        const dLonMinCursor = (clientX - canvas.getBoundingClientRect().left - dims.w/2) / (scale * Math.max(0.01, cosLat));
+                        setCursorPos({ 
+                            lat: center.lat + (dLatMinCursor / 60), 
+                            lon: center.lon + (dLonMinCursor / 60) 
+                        });
+
+                    } else if (e.touches.length === 2) {
+                        const dist = Math.hypot(
+                            e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY
+                        );
+                        if (stateRef.current.startPinchDist > 0) {
+                            const ratio = dist / stateRef.current.startPinchDist;
+                            const newScale = Math.max(1, Math.min(100, stateRef.current.lastScale * ratio));
+                            setScale(newScale);
+                        }
+                    }
+                };
+
+                // Add non-passive listeners
+                canvas.addEventListener('wheel', handleWheel, { passive: false });
+                canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+                return () => {
+                    canvas.removeEventListener('wheel', handleWheel);
+                    canvas.removeEventListener('touchmove', handleTouchMove);
+                };
+            }, []);
+
+            // React Event Handlers (Start/End don't need passive false)
+            const handlePointerDown = (clientX, clientY) => {
+                stateRef.current.isDragging = true;
+                stateRef.current.startX = clientX;
+                stateRef.current.startY = clientY;
+            };
+
+            const handlePointerMove = (clientX, clientY) => {
+                if (!stateRef.current.isDragging) return;
+                const { scale } = stateRef.current;
+                const dx = clientX - stateRef.current.startX;
+                const dy = clientY - stateRef.current.startY;
+                const center = stateRef.current.viewCenter || stateRef.current.calculatedCenter;
+                const cosLat = Math.max(0.01, Math.cos(center.lat * Math.PI / 180));
+                
+                const dLat = dy / scale / 60; 
+                const dLon = -dx / scale / 60 / cosLat;
+                setViewCenter({ lat: center.lat + dLat, lon: center.lon + dLon });
+                stateRef.current.startX = clientX;
+                stateRef.current.startY = clientY;
+            };
+
+            const handleTouchStart = (e) => {
+                if (e.touches.length === 1) {
+                    handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
+                } else if (e.touches.length === 2) {
+                    const dist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    stateRef.current.startPinchDist = dist;
+                    stateRef.current.lastScale = stateRef.current.scale;
+                }
+            };
+
+            const updateCursorReadout = (clientX, clientY) => {
+                const rect = canvasRef.current.getBoundingClientRect();
+                const center = stateRef.current.viewCenter || stateRef.current.calculatedCenter;
+                const cosLat = Math.max(0.01, Math.cos(center.lat * Math.PI / 180));
+                const dLatMin = -((clientY - rect.top - dims.h/2) / scale); 
+                const dLonMin = (clientX - rect.left - dims.w/2) / (scale * Math.max(0.01, cosLat));
+                setCursorPos({ lat: center.lat + (dLatMin / 60), lon: center.lon + (dLonMin / 60) });
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/95 z-50 flex flex-col">
+                    {/* Header */}
+                    <div className="bg-white p-3 flex justify-between items-center shadow z-10">
+                        <div className="flex items-center gap-3">
+                             <div className="flex flex-col">
+                                <h2 className="font-bold text-lg leading-none">Plotter</h2>
+                                <button 
+                                    onClick={() => setViewCenter(calculatedCenter)}
+                                    className="text-xs text-blue-600 font-bold mt-1 bg-blue-50 px-2 py-1 rounded border border-blue-100"
+                                >
+                                    RE-CENTER
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                             {fixData && fixData.mpp && (
+                                <div className="text-right font-mono hidden md:block">
+                                    <div className="text-xs text-red-500 uppercase font-bold">FIX ({fixData.intersections.length} int.)</div>
+                                    <div className="text-red-700 font-bold">
+                                        {Formatters.lat(fixData.mpp.lat)} {Formatters.gha(Math.abs(fixData.mpp.lon))}{fixData.mpp.lon >= 0 ? 'E' : 'W'}
+                                    </div>
+                                </div>
+                             )}
+                             <div className="text-right font-mono hidden md:block">
+                                <div className="text-xs text-slate-400">CURSOR</div>
+                                <div className="text-blue-600 font-bold">
+                                    {cursorPos.lat !== null ? `${Formatters.lat(cursorPos.lat)} ${Formatters.inputDisplay(cursorPos.lon)}` : '--'}
+                                </div>
+                            </div>
+                            <button onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><i data-lucide="x" className="w-6 h-6"></i></button>
+                        </div>
+                    </div>
+
+                    {/* Canvas Area */}
+                    <div className="flex-grow relative overflow-hidden bg-slate-200 touch-none">
+                        <canvas 
+                            ref={canvasRef} 
+                            width={dims.w} 
+                            height={dims.h} 
+                            className="absolute top-0 left-0 cursor-move"
+                            onMouseDown={(e) => handlePointerDown(e.clientX, e.clientY)}
+                            onMouseMove={(e) => { 
+                                handlePointerMove(e.clientX, e.clientY); 
+                                updateCursorReadout(e.clientX, e.clientY);
+                            }}
+                            onMouseUp={() => stateRef.current.isDragging = false}
+                            onMouseLeave={() => stateRef.current.isDragging = false}
+                            onTouchStart={handleTouchStart}
+                            onTouchEnd={() => stateRef.current.isDragging = false}
+                            /* TouchMove handled natively for passive: false */
+                        />
+                        
+                        {/* Mobile Overlay Controls */}
+                        <div className="absolute bottom-6 right-6 flex flex-col gap-2 pointer-events-none">
+                            <div className="bg-white/90 backdrop-blur p-2 rounded-lg shadow-lg border border-slate-200 pointer-events-auto flex flex-col gap-4">
+                                <button onClick={handleZoomIn} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-slate-700 active:bg-blue-100"><i data-lucide="plus" className="w-6 h-6"></i></button>
+                                <div className="text-center text-xs font-mono text-slate-400 font-bold py-1 border-t border-b">{scale.toFixed(1)}</div>
+                                <button onClick={handleZoomOut} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-slate-700 active:bg-blue-100"><i data-lucide="minus" className="w-6 h-6"></i></button>
+                            </div>
+                        </div>
+                        
+                         {/* Mobile Cursor Readout Overlay */}
+                         <div className="absolute top-4 left-4 pointer-events-none md:hidden">
+                            <div className="bg-white/80 backdrop-blur px-3 py-2 rounded shadow border border-slate-200 text-xs font-mono font-bold text-slate-700">
+                                {fixData && fixData.mpp && (
+                                    <div className="text-red-700 border-b border-slate-300 pb-1 mb-1">
+                                        FIX: {Formatters.lat(fixData.mpp.lat)} {Formatters.gha(Math.abs(fixData.mpp.lon))}{fixData.mpp.lon >= 0 ? 'E' : 'W'}
+                                    </div>
+                                )}
+                                {cursorPos.lat !== null ? (
+                                    <>
+                                        <div>{Formatters.lat(cursorPos.lat)}</div>
+                                        <div>{Formatters.inputDisplay(cursorPos.lon)}</div>
+                                    </>
+                                ) : "Touch map"}
+                            </div>
+                         </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AlmanacModal = ({ onClose, onSelectData }) => {
+            const [currentDate, setCurrentDate] = useState(new Date());
+            const [isRunning, setIsRunning] = useState(true);
+            const [selectedBody, setSelectedBody] = useState('Sun');
+            const [selectedStar, setSelectedStar] = useState('Aldebaran');
+            const [selectedLimb, setSelectedLimb] = useState('L'); 
+
+            useEffect(() => {
+                let interval;
+                if (isRunning) interval = setInterval(() => setCurrentDate(new Date()), 1000);
+                return () => clearInterval(interval);
+            }, [isRunning]);
+
+            const handleDateChange = (e) => {
+                const d = new Date(e.target.value + 'Z');
+                if (!isNaN(d)) {
+                    setCurrentDate(d);
+                    setIsRunning(false);
+                }
+            };
+            
+            const handleMark = () => { setIsRunning(false); setCurrentDate(new Date()); };
+            
+            const data = useMemo(() => NavMath.calculateAlmanac(currentDate, selectedBody, selectedStar), [currentDate, selectedBody, selectedStar]);
+            
+            const isStarMode = selectedBody === 'Aries' || selectedBody === 'Star';
+            const toLocalISO = (date) => { return date.toISOString().slice(0, 19); };
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 md:p-4">
+                    <div className="bg-white modal-content rounded-xl w-full max-w-4xl shadow-2xl border border-slate-300 overflow-hidden flex flex-col max-h-[98vh]">
+                        <div className="bg-slate-900 text-white p-3 md:p-4 flex justify-between items-center shrink-0">
+                            <div className="flex items-center gap-2">
+                                <img src="https://xaxero.com/tools/logoim.png" alt="Xaxero" className="h-6 w-auto" />
+                                <h2 className="font-bold text-lg ml-2">Almanac</h2>
+                            </div>
+                            <button onClick={onClose} className="p-2 hover:bg-white/20 rounded"><i data-lucide="x" className="w-6 h-6"></i></button>
+                        </div>
+                        <div className="p-4 border-b bg-slate-100 flex flex-col lg:flex-row gap-4 justify-between items-center shrink-0">
+                            <div className="flex gap-2 items-center w-full lg:w-auto justify-center lg:justify-start">
+                                <button onClick={handleMark} className="bg-cyan-600 text-white px-6 py-3 rounded font-bold flex items-center gap-2 shadow hover:bg-cyan-500 active:scale-95 transition-transform"><i data-lucide="crosshair" className="w-5 h-5"></i> MARK</button>
+                                <div className="flex flex-col flex-grow">
+                                    <input type="datetime-local" step="1" className="bg-white border px-2 py-2 rounded font-mono text-right text-slate-800 text-base" value={toLocalISO(currentDate)} onChange={handleDateChange} />
+                                    <div className="text-[10px] text-slate-500 text-right pr-1">UTC TIME</div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2 w-full lg:w-auto">
+                                <div className="flex flex-wrap gap-1 justify-center lg:justify-end">
+                                    <button onClick={() => setSelectedBody('Sun')} className={`px-4 py-2 rounded font-bold ${selectedBody === 'Sun' ? 'bg-amber-500 text-white' : 'bg-white border'}`}>Sun</button>
+                                    <button onClick={() => setSelectedBody('Moon')} className={`px-4 py-2 rounded font-bold ${selectedBody === 'Moon' ? 'bg-slate-600 text-white' : 'bg-white border'}`}>Moon</button>
+                                    {CONSTANTS.PLANETS.map(p => <button key={p} onClick={() => setSelectedBody(p)} className={`px-3 py-2 rounded text-sm font-bold ${selectedBody === p ? 'bg-blue-600 text-white' : 'bg-white border'}`}>{p.substring(0,3)}</button>)}
+                                    <button onClick={() => setSelectedBody('Aries')} className={`px-4 py-2 rounded font-bold ${selectedBody === 'Aries' ? 'bg-teal-600 text-white' : 'bg-white border'}`}>Stars</button>
+                                </div>
+                                {['Sun', 'Moon'].includes(selectedBody) && (
+                                    <div className="flex gap-1 justify-center lg:justify-end">
+                                        <button onClick={() => setSelectedLimb('L')} className={`px-2 py-1 text-xs rounded font-bold border ${selectedLimb === 'L' ? 'bg-slate-700 text-white' : 'bg-white text-slate-600'}`}>Lower Limb</button>
+                                        <button onClick={() => setSelectedLimb('U')} className={`px-2 py-1 text-xs rounded font-bold border ${selectedLimb === 'U' ? 'bg-slate-700 text-white' : 'bg-white text-slate-600'}`}>Upper Limb</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        {isStarMode && (<div className="p-3 bg-slate-50 border-b flex justify-center"><select value={selectedStar} onChange={(e) => { setSelectedStar(e.target.value); setSelectedBody('Star'); }} className="bg-white border rounded px-4 py-3 font-medium w-full max-w-xs text-base">{NAV_STARS_LIST.map(s => <option key={s} value={s}>{s}</option>)}</select></div>)}
+                        <div className="flex-grow overflow-y-auto p-4 md:p-6">
+                            {data ? (
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-2 gap-4 text-center">
+                                        <div className="p-4 bg-slate-50 rounded border">
+                                            <div className="text-xs text-slate-400 uppercase font-bold">{isStarMode ? 'GHA Aries' : 'GHA Body'}</div>
+                                            <div className="text-3xl font-mono font-bold text-slate-800">{isStarMode ? Formatters.gha(data.ghaAries) : Formatters.gha(data.gha)}</div>
+                                        </div>
+                                        <div className="p-4 bg-slate-50 rounded border">
+                                            <div className="text-xs text-slate-400 uppercase font-bold">Dec</div>
+                                            <div className="text-3xl font-mono font-bold text-slate-800">{Formatters.dec(data.dec)}</div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2 text-center text-sm">
+                                        <div className="bg-white p-2 border rounded"><div className="text-slate-400 text-xs font-bold">v</div><div className="font-mono font-bold text-base">{Formatters.decimal(data.v, 1)}'</div></div>
+                                        <div className="bg-white p-2 border rounded"><div className="text-slate-400 text-xs font-bold">d</div><div className="font-mono font-bold text-base">{Formatters.decimal(data.d, 1)}'</div></div>
+                                        <div className="bg-white p-2 border rounded"><div className="text-slate-400 text-xs font-bold">SD</div><div className="font-mono font-bold text-base">{data.sd ? Formatters.decimal(data.sd, 1) : '-'}</div></div>
+                                        <div className="bg-white p-2 border rounded"><div className="text-slate-400 text-xs font-bold">HP</div><div className="font-mono font-bold text-base">{data.hp ? Formatters.decimal(data.hp, 1) : '-'}</div></div>
+                                    </div>
+                                    {isStarMode && (<div className="bg-blue-50 p-3 rounded border border-blue-100 text-center"><div className="text-xs text-blue-500 font-bold mb-1">STAR DATA</div><div className="flex justify-around"><div>SHA: <span className="font-mono font-bold">{Formatters.gha(data.sha)}</span></div><div>Dec: <span className="font-mono font-bold">{Formatters.dec(data.dec)}</span></div></div></div>)}
+                                </div>
+                            ) : <div className="text-center p-8 text-slate-400">Calculating...</div>}
+                        </div>
+                        <div className="p-4 border-t bg-slate-50 flex justify-end pb-8 md:pb-4">
+                            <button onClick={() => { if(!data)return; onSelectData({ body: isStarMode ? selectedStar : selectedBody, time: currentDate, ghaWhole: isStarMode ? data.ghaAries : data.gha, decWhole: data.dec, v: data.v, d: data.d, sd: data.sd, hp: data.hp, sha: data.sha, ghaAries: data.ghaAries, limb: selectedLimb }); onClose(); }} disabled={!data} className="w-full md:w-auto bg-green-600 hover:bg-green-500 text-white px-6 py-4 md:py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 transition-transform"><i data-lucide="check-circle" className="w-5 h-5"></i> USE DATA</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // MODULE 4: FORM SUB-COMPONENTS
+        // ==========================================
+
+        const Header = ({ onReset, isRedMode, setIsRedMode, isStudyMode, setIsStudyMode }) => (
+            <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-30">
+                <div className="max-w-6xl mx-auto flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <img src="https://xaxero.com/tools/logoim.png" alt="Xaxero" className="h-8 md:h-10 w-auto" />
+                        <div><h1 className="text-lg md:text-xl font-bold leading-none">HO-229</h1><div className="text-[10px] md:text-xs text-slate-400">SIGHT REDUCTION FORM</div></div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={onReset} className="text-xs border px-2 py-2 md:py-1 rounded border-red-600 text-red-400 hover:text-white hover:bg-red-900">NEW</button>
+                        <button onClick={() => setIsStudyMode(!isStudyMode)} className={`text-xs border px-3 py-2 md:py-1 rounded border-purple-500 ${isStudyMode ? 'bg-purple-600 text-white' : 'text-purple-400 hover:text-white hover:bg-purple-900'}`}>STUDY</button>
+                        <button onClick={() => setIsRedMode(!isRedMode)} className="text-xs border px-3 py-2 md:py-1 rounded border-slate-600 text-slate-400 hover:text-white">{isRedMode ? 'DAY' : 'NIGHT'}</button>
+                    </div>
+                </div>
+            </header>
+        );
+
+        const ObservationCard = ({ obsData, setObsData, onOpenAlmanac, onIdentify, isStudyMode, onShowHelp }) => {
+            const handleUnitToggle = () => {
+                // Switch between Metric (mb/C) and Imperial (inHg/F)
+                if (obsData.unitSystem === 'metric') {
+                    // Convert to Imperial
+                    const p = parseFloat(obsData.pressure);
+                    const t = parseFloat(obsData.temperature);
+                    const newP = !isNaN(p) ? (p / 33.8639).toFixed(2) : '';
+                    const newT = !isNaN(t) ? ((t * 9/5) + 32).toFixed(1) : '';
+                    setObsData({...obsData, unitSystem: 'imperial', pressure: newP, temperature: newT});
+                } else {
+                    // Convert to Metric
+                    const p = parseFloat(obsData.pressure);
+                    const t = parseFloat(obsData.temperature);
+                    const newP = !isNaN(p) ? (p * 33.8639).toFixed(0) : '';
+                    const newT = !isNaN(t) ? ((t - 32) * 5/9).toFixed(1) : '';
+                    setObsData({...obsData, unitSystem: 'metric', pressure: newP, temperature: newT});
+                }
+            };
+
+            // Strict positive input handler
+            const handlePosInput = (field, val) => {
+                if (val === '' || (!isNaN(val) && parseFloat(val) >= 0)) {
+                    setObsData(prev => ({ ...prev, [field]: val }));
+                }
+            };
+
+            return (
+                <div className="card bg-white rounded-lg shadow border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-50 p-3 border-b border-slate-200 font-bold text-slate-700 flex justify-between"><span>1. Observation & Ship State</span><i data-lucide="map-pin" className="w-5 h-5 text-slate-400"></i></div>
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="space-y-3">
+                            <label className="block text-xs font-bold text-slate-500 uppercase flex items-center">Body <HelpIcon helpKey="body" isVisible={isStudyMode} onShow={onShowHelp} /></label>
+                            {obsData.body ? (
+                                <div className="flex gap-2">
+                                    <div className="flex-grow flex items-center gap-2 bg-green-50 border border-green-200 p-2 rounded text-green-800 font-bold">
+                                        <i data-lucide="check" className="w-4 h-4"></i> 
+                                        {obsData.body}
+                                        {['Sun', 'Moon'].includes(obsData.body) && obsData.limb && (
+                                            <span className="text-[10px] bg-slate-200 text-slate-600 px-1 rounded ml-1">{obsData.limb}</span>
+                                        )}
+                                        <button onClick={onOpenAlmanac} className="ml-auto text-xs bg-white border border-green-300 px-3 py-2 rounded hover:bg-green-100">CHANGE</button>
+                                    </div>
+                                    <button onClick={onIdentify} className="w-14 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold rounded flex items-center justify-center border border-purple-300" title="Identify Body (Star Finder)"><i data-lucide="stars" className="w-6 h-6"></i></button>
+                                </div>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <button onClick={onOpenAlmanac} className="flex-grow bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-4 rounded flex items-center justify-center gap-2 shadow active:scale-95 transition-transform"><i data-lucide="search" className="w-5 h-5"></i> OPEN ALMANAC</button>
+                                    <button onClick={onIdentify} className="w-14 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold rounded flex items-center justify-center border border-purple-300" title="Identify Body (Star Finder)"><i data-lucide="stars" className="w-6 h-6"></i></button>
+                                </div>
+                            )}
+                            
+                            <div className="mt-1">
+                                <div className="text-[10px] text-slate-400 mb-1">Observation Time (UTC)</div>
+                                <input type="datetime-local" step="1" className="w-full border rounded p-2 font-mono text-base" value={obsData.dateTime ? obsData.dateTime.substring(0, 19) : ''} onChange={e => setObsData(prev => ({ ...prev, dateTime: new Date(e.target.value + 'Z').toISOString() }))} />
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-slate-500 uppercase flex items-center">Sextant Altitude <HelpIcon helpKey="hs" isVisible={isStudyMode} onShow={onShowHelp} /></label>
+                                    <div className="flex gap-1">
+                                        <input type="number" className="w-1/2 border rounded p-2 font-mono text-right" placeholder="Deg" value={obsData.hsDeg} onChange={e => setObsData({...obsData, hsDeg: e.target.value})} />
+                                        <input type="number" className="w-1/2 border rounded p-2 font-mono text-right" placeholder="Min" value={obsData.hsMin} onChange={e => setObsData({...obsData, hsMin: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-slate-500 uppercase">Corrections</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div><div className="text-[9px] text-slate-400 flex items-center">Index Err <HelpIcon helpKey="ie" isVisible={isStudyMode} onShow={onShowHelp} /></div><input type="number" className="w-full border rounded p-2 font-mono text-right" placeholder="IE" value={obsData.ie} onChange={e => setObsData({...obsData, ie: e.target.value})} /></div>
+                                        <div><div className="text-[9px] text-slate-400 flex items-center">Ht Eye ({obsData.unitSystem === 'imperial' ? 'ft' : 'm'}) <HelpIcon helpKey="he" isVisible={isStudyMode} onShow={onShowHelp} /></div><input type="number" className="w-full border rounded p-2 font-mono text-right" placeholder="HE" value={obsData.he} onChange={e => setObsData({...obsData, he: e.target.value})} /></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* NEW: Env Corrections */}
+                            <div className="pt-2 border-t border-dashed">
+                                <div className="flex justify-between items-center mb-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center">Atmosphere <HelpIcon helpKey="envCorr" isVisible={isStudyMode} onShow={onShowHelp} /></label>
+                                    <button onClick={handleUnitToggle} className="text-[10px] bg-slate-100 px-2 py-0.5 rounded border hover:bg-slate-200 text-slate-600 font-bold">{obsData.unitSystem === 'metric' ? 'METRIC' : 'IMPERIAL'}</button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <div className="text-[9px] text-slate-400">Pressure ({obsData.unitSystem === 'metric' ? 'hPa' : 'inHg'})</div>
+                                        <input type="number" step="0.1" className="w-full border rounded p-2 font-mono text-right text-sm" value={obsData.pressure} onChange={e => setObsData({...obsData, pressure: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <div className="text-[9px] text-slate-400">Temp ({obsData.unitSystem === 'metric' ? '°C' : '°F'})</div>
+                                        <input type="number" step="0.1" className="w-full border rounded p-2 font-mono text-right text-sm" value={obsData.temperature} onChange={e => setObsData({...obsData, temperature: e.target.value})} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-xs font-bold text-slate-500 uppercase flex items-center">Assumed Position <HelpIcon helpKey="ap" isVisible={isStudyMode} onShow={onShowHelp} /></label>
+                            <div className="space-y-2">
+                                <div className="flex gap-1 items-center">
+                                    <span className="text-xs w-8 text-slate-400 font-bold">LAT</span>
+                                    <input type="number" min="0" className="w-16 border rounded p-2 font-mono text-right" placeholder="Deg" value={obsData.apLatDeg} onChange={e => handlePosInput('apLatDeg', e.target.value)} />
+                                    <input type="number" min="0" className="w-24 border rounded p-2 font-mono text-right" placeholder="Min" value={obsData.apLatMin} onChange={e => handlePosInput('apLatMin', e.target.value)} />
+                                    <select className="bg-slate-50 border rounded text-base font-bold px-2 py-2" value={obsData.apLatDir || 'N'} onChange={e => setObsData({...obsData, apLatDir: e.target.value})}>
+                                        <option value="N">N</option>
+                                        <option value="S">S</option>
+                                    </select>
+                                </div>
+                                <div className="flex gap-1 items-center">
+                                    <span className="text-xs w-8 text-slate-400 font-bold">LON</span>
+                                    <input type="number" min="0" className="w-16 border rounded p-2 font-mono text-right" placeholder="Deg" value={obsData.apLonDeg} onChange={e => handlePosInput('apLonDeg', e.target.value)} />
+                                    <input type="number" min="0" className="w-24 border rounded p-2 font-mono text-right" placeholder="Min" value={obsData.apLonMin} onChange={e => handlePosInput('apLonMin', e.target.value)} />
+                                    <select className="bg-slate-50 border rounded text-base font-bold px-2 py-2" value={obsData.apLonDir || 'W'} onChange={e => setObsData({...obsData, apLonDir: e.target.value})}>
+                                        <option value="W">W</option>
+                                        <option value="E">E</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                             <div className="pt-2 border-t border-dashed mt-2">
+                                <label className="block text-xs font-bold text-slate-500 uppercase flex items-center mb-1">Dead Reckoning</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div><div className="text-[9px] text-slate-400">Course (T)</div><input type="number" className="w-full border rounded p-2 font-mono text-sm" placeholder="Deg" value={obsData.course} onChange={e => setObsData({...obsData, course: e.target.value})} /></div>
+                                    <div><div className="text-[9px] text-slate-400">Speed (kts)</div><input type="number" className="w-full border rounded p-2 font-mono text-sm" placeholder="Kts" value={obsData.speed} onChange={e => setObsData({...obsData, speed: e.target.value})} /></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const WorksheetCard = ({ obsData, setObsData, almData, onSave, isStudyMode, onShowHelp, onShowHO229, setModalConfig }) => {
+            const r = useMemo(() => NavMath.reduceSight(obsData, almData), [obsData, almData]);
+            
+            const isStar = obsData.body && (CONSTANTS.STARS[obsData.body] || obsData.body === 'Aries');
+            const isMoon = obsData.body === 'Moon';
+
+            // Check if LHA and Lat are close enough to integers to allow Table Lookup
+            const isWholeLHA = Math.abs(r.lha - Math.round(r.lha)) < 0.005; 
+            const isWholeLat = Math.abs(r.latVal - Math.round(r.latVal)) < 0.005;
+            const canShowTable = isWholeLHA && isWholeLat;
+
+            const handleSetAP = () => {
+                // Logic to set AP compatible with HO229
+                // Lat = Nearest Whole Degree to Current Input (usually DR)
+                const currentLatVal = (parseFloat(obsData.apLatDeg)||0) + ((parseFloat(obsData.apLatMin)||0)/60);
+                const currentLonVal = (parseFloat(obsData.apLonDeg)||0) + ((parseFloat(obsData.apLonMin)||0)/60);
+                const newLatDeg = Math.round(currentLatVal);
+                
+                // Lon = Adjusted so LHA is Integer
+                const gha = r.ghaFinal;
+                const ghaMin = (gha - Math.floor(gha)) * 60;
+                
+                let newLonMin = 0;
+                let newLonDeg = parseFloat(obsData.apLonDeg) || 0;
+                const lonDir = obsData.apLonDir;
+                
+                if (lonDir === 'W') {
+                    newLonMin = ghaMin;
+                } else {
+                    newLonMin = 60 - ghaMin;
+                }
+                
+                // Check for rollover if minutes round up to 60
+                if (parseFloat(newLonMin.toFixed(1)) >= 60.0) {
+                    newLonMin = 0;
+                    newLonDeg += 1;
+                }
+                
+                // Proximity check: warn if new AP is more than 60nm from input position
+                const newLonVal = newLonDeg + newLonMin / 60;
+                const latDiff = Math.abs(newLatDeg - currentLatVal) * 60; // nm
+                const lonDiff = Math.abs(newLonVal - currentLonVal) * 60 * Math.cos((currentLatVal || 0) * Math.PI / 180); // nm
+                const totalDist = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff);
+                
+                if (totalDist > 60 && currentLatVal !== 0 && currentLonVal !== 0) {
+                    setModalConfig({
+                        type: 'confirm',
+                        message: `Warning: The computed AP is ${Math.round(totalDist)} nm from your input position. This is unusually far. The AP should be near your DR. Continue anyway?`,
+                        onConfirm: () => {
+                            setObsData(prev => ({
+                                ...prev,
+                                apLatDeg: newLatDeg,
+                                apLatMin: '0.0',
+                                apLonDeg: newLonDeg,
+                                apLonMin: newLonMin.toFixed(1)
+                            }));
+                        }
+                    });
+                } else {
+                    setObsData(prev => ({
+                        ...prev,
+                        apLatDeg: newLatDeg,
+                        apLatMin: '0.0',
+                        apLonDeg: newLonDeg,
+                        apLonMin: newLonMin.toFixed(1)
+                    }));
+                }
+            };
+
+            return (
+                <div className="card bg-white rounded-lg shadow border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-50 p-3 border-b border-slate-200 font-bold text-slate-700 flex justify-between"><span>2. Sight Reduction Worksheet</span><i data-lucide="clipboard" className="w-5 h-5 text-slate-400"></i></div>
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-8 text-sm">
+                        {/* Col 1: Altitude */}
+                        <div>
+                            <div className="font-bold text-slate-800 border-b-2 border-slate-300 mb-2 pb-1 uppercase">Altitude (Vert)</div>
+                            <div className="form-row"><span className="form-label">Sextant Alt (Hs) <HelpIcon helpKey="hs" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{Formatters.angle(r.hsVal)}</span></div>
+                            <div className="form-row"><span className="form-label">Index Error (IE) <HelpIcon helpKey="ie" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{obsData.ie}'</span></div>
+                            <div className="form-row"><span className="form-label">Dip (He {obsData.he}{obsData.unitSystem === 'imperial' ? 'ft' : 'm'}) <HelpIcon helpKey="he" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">-{Formatters.decimal(r.dip, 1)}'</span></div>
+                            <div className="form-row bg-slate-50"><span className="form-label font-bold">Apparent Alt (Ha) <HelpIcon helpKey="ha" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val text-blue-800">{Formatters.angle(r.ha)}</span></div>
+                            <div className="form-row"><span className="form-label">Main Corr (Ref/SD{isMoon ? '/PA' : ''}) <HelpIcon helpKey="mainCorr" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{r.mainCorr >= 0 ? '+' : ''}{Formatters.decimal(r.mainCorr*60, 1)}'</span></div>
+                            <div className="form-row"><span className="form-label text-slate-500">Env. Corr (T/P) <HelpIcon helpKey="envCorr" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val text-slate-600">{r.envCorr >= 0 ? '+' : ''}{Formatters.decimal(r.envCorr*60, 1)}'</span></div>
+                            {isMoon && <div className="form-row"><span className="form-label text-slate-500">  └ Parallax <HelpIcon helpKey="parallax" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val text-slate-500">+{Formatters.decimal(r.corrPar*60, 1)}'</span></div>}
+                            <div className="form-row border-t-2 border-slate-700 mt-2 pt-1"><span className="form-label font-bold text-base">Observed Alt (Ho) <HelpIcon helpKey="ho" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val text-lg">{Formatters.angle(r.ho)}</span></div>
+                        </div>
+
+                        {/* Col 2: Hour Angle */}
+                        <div>
+                            <div className="font-bold text-slate-800 border-b-2 border-slate-300 mb-2 pb-1 uppercase">Hour Angle (Time)</div>
+                            <div className="form-row"><span className="form-label">GHA (Whole Hr) <HelpIcon helpKey="gha" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{r.ghaWhole != null ? Formatters.angle(r.ghaWhole) : Formatters.angle(r.ghaAries)}</span></div>
+                            <div className="form-row"><span className="form-label">Incr ({r.minutes}m {r.seconds}s) <HelpIcon helpKey="incr" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">+{Formatters.angle(r.ghaInc)}</span></div>
+                            {isStar && <div className="form-row"><span className="form-label">SHA <HelpIcon helpKey="sha" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">+{Formatters.angle(r.sha)}</span></div>}
+                            {r.vCorr !== 0 && <div className="form-row"><span className="form-label">v correction <HelpIcon helpKey="vcorr" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{r.vCorr >= 0 ? '+' : ''}{Formatters.decimal(r.vCorr*60, 1)}'</span></div>}
+                            <div className="form-row bg-slate-50"><span className="form-label font-bold">GHA Total</span><span className="form-val text-blue-800">{Formatters.angle(r.ghaFinal)}</span></div>
+                            
+                            <div className="form-row items-start pt-2">
+                                <div className="flex flex-col justify-start">
+                                    <span className="form-label">Assumed Lon <HelpIcon helpKey="ap" isVisible={isStudyMode} onShow={onShowHelp} /></span>
+                                    {/* Prominent SET AP button */}
+                                    <button 
+                                        onClick={handleSetAP} 
+                                        className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 px-2 py-1 rounded font-bold hover:bg-amber-200 mt-2 shadow-sm flex items-center gap-1" 
+                                        title="Adjust AP Longitude for Integer LHA and Latitude for Integer Degrees"
+                                    >
+                                        <i data-lucide="crosshair" className="w-3 h-3"></i> SET AP FOR TABLE
+                                    </button>
+                                </div>
+                                <span className="form-val mt-1">{Formatters.angle(r.apLonVal)}</span>
+                            </div>
+                            
+                            <div className="form-row border-t-2 border-slate-700 mt-2 pt-1">
+                                <span className="form-label font-bold text-base">LHA <HelpIcon helpKey="lha" isVisible={isStudyMode} onShow={onShowHelp} /></span>
+                                <span className={`form-val text-lg ${isWholeLHA ? 'text-green-700' : 'text-slate-800'}`}>{Formatters.angle(r.lha)}</span>
+                            </div>
+                            {!isWholeLHA && <div className="text-[10px] text-amber-600 text-right italic">Non-integer LHA (No Table Page)</div>}
+                        </div>
+
+                        {/* Col 3: Result */}
+                        <div className="bg-slate-50 p-2 rounded border border-slate-200 shadow-sm">
+                            <div className="font-bold text-slate-800 border-b-2 border-slate-300 mb-2 pb-1 uppercase flex justify-between items-center">
+                                <span>Declination & Intercept</span>
+                                <div className="group relative">
+                                    <button 
+                                        onClick={() => canShowTable && onShowHO229(r.latVal, r.lha, r.decFinal)}
+                                        disabled={!canShowTable}
+                                        className={`text-xs px-2 py-1 rounded flex items-center gap-1 shadow transition-colors
+                                            ${canShowTable 
+                                                ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
+                                                : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
+                                    >
+                                        <i data-lucide="book-open" className="w-3 h-3"></i> TABLE
+                                    </button>
+                                    {!canShowTable && (
+                                        <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                            Table requires Integer LHA and Integer Latitude. Use "SET AP FOR TABLE".
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="form-row"><span className="form-label">Dec (Whole Hr) <HelpIcon helpKey="dec" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{Formatters.dec(r.decWhole)}</span></div>
+                            <div className="form-row"><span className="form-label">d correction <HelpIcon helpKey="dcorr" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{r.dCorr >= 0 ? '+' : ''}{Formatters.decimal(r.dCorr*60, 1)}'</span></div>
+                            <div className="form-row bg-slate-50 mb-4"><span className="form-label font-bold">True Dec</span><span className="form-val text-blue-800">{Formatters.dec(r.decFinal)}</span></div>
+                            
+                            <div className="form-row">
+                                <span className="form-label">Assumed Lat</span>
+                                <span className={`form-val ${isWholeLat ? 'text-green-700' : ''}`}>{Formatters.lat(r.latVal)}</span>
+                            </div>
+                            <div className="form-row"><span className="form-label">Computed (Hc) <HelpIcon helpKey="hc" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val">{Formatters.angle(r.hc)}</span></div>
+                            <div className="form-row border-t-2 border-slate-700 mt-2 pt-1 bg-green-50 px-1 rounded"><span className="form-label font-bold text-base text-green-900">Intercept (a) <HelpIcon helpKey="intercept" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val text-lg text-green-900">{Formatters.decimal(Math.abs(r.intercept), 1)} {r.intercept >= 0 ? 'T' : 'A'}</span></div>
+                            <div className="form-row px-1"><span className="form-label font-bold">Azimuth (Zn) <HelpIcon helpKey="zn" isVisible={isStudyMode} onShow={onShowHelp} /></span><span className="form-val text-orange-600">{Formatters.decimal(r.zn, 1)}&deg;</span></div>
+                            <div className="mt-4">
+                                <button onClick={() => onSave(r.zn, r.intercept)} disabled={!obsData.body} className="w-full py-4 md:py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-transform"><i data-lucide="plus-circle" className="w-5 h-5"></i> ADD TO PLOT</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const LopTable = ({ lops, selectedLops, toggleLopSelection, onDelete, onPlot }) => (
+            <div className="card bg-white rounded-lg shadow border border-slate-200 overflow-hidden mb-12">
+                <div className="bg-slate-50 p-3 border-b border-slate-200 font-bold text-slate-700 flex justify-between items-center">
+                    <span>3. Saved LOPs</span>
+                    <div className="flex gap-2">
+                        <button onClick={onDelete} className="text-xs bg-red-100 text-red-700 border border-red-200 px-3 py-2 rounded hover:bg-red-200 flex items-center gap-1"><i data-lucide="trash" className="w-3 h-3"></i> Delete</button>
+                        <button onClick={onPlot} className="text-xs bg-blue-600 text-white border border-blue-700 px-4 py-2 rounded hover:bg-blue-500 flex items-center gap-1 shadow-sm"><i data-lucide="map" className="w-3 h-3"></i> PLOT SELECTED</button>
+                    </div>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b">
+                            <tr>
+                                <th className="px-4 py-3 w-10 text-center"><i data-lucide="check-square" className="w-4 h-4 mx-auto"></i></th>
+                                <th className="px-4 py-3">Date / UTC</th>
+                                <th className="px-4 py-3">Body</th>
+                                <th className="px-4 py-3">C/S</th>
+                                <th className="px-4 py-3">Zn</th>
+                                <th className="px-4 py-3 text-right">Intercept</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {lops.length === 0 ? (
+                                <tr><td colSpan={6} className="p-8 text-center text-slate-400">No sights saved yet.</td></tr>
+                            ) : lops.map(lop => (
+                                <tr key={lop.id} className="hover:bg-slate-50">
+                                    <td className="px-4 py-3 text-center"><input type="checkbox" className="w-5 h-5" checked={selectedLops.has(lop.id)} onChange={() => toggleLopSelection(lop.id)} /></td>
+                                    <td className="px-4 py-3 font-mono text-slate-600">
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase">{new Date(lop.time).toISOString().split('T')[0]}</div>
+                                        <div>{new Date(lop.time).toISOString().split('T')[1].substring(0, 8)}</div>
+                                    </td>
+                                    <td className="px-4 py-3 font-bold">{lop.body}</td>
+                                    <td className="px-4 py-3 font-mono text-xs">{lop.course}&deg; / {lop.speed}kt</td>
+                                    <td className="px-4 py-3 font-mono text-blue-600 font-bold">{lop.zn}&deg;</td>
+                                    <td className="px-4 py-3 font-mono text-right font-bold">{lop.intercept} <span className="text-xs text-slate-400">{lop.interceptDir}</span></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+
+        // ==========================================
+        // MODULE 5: MAIN CONTROLLER (SIGHT FORM)
+        // ==========================================
+        const SightForm = () => {
+            const [showAlmanac, setShowAlmanac] = useState(false);
+            const [showPlotter, setShowPlotter] = useState(false);
+            const [showIdentify, setShowIdentify] = useState(false);
+            const [showHO229, setShowHO229] = useState(false);
+            const [ho229Params, setHo229Params] = useState(null);
+            
+            const [isRedMode, setIsRedMode] = useState(false);
+            const [isStudyMode, setIsStudyMode] = useState(false);
+            
+            // Added pressure, temperature, unitSystem to initial state
+            const [obsData, setObsData] = useState({ 
+                body: '', dateTime: '', 
+                hsDeg: '', hsMin: '', 
+                ie: 0, he: 0, 
+                apLatDeg: '', apLatMin: '', apLatDir: 'N', 
+                apLonDeg: '', apLonMin: '', apLonDir: 'W', 
+                course: '', speed: '',
+                pressure: '1013', temperature: '15', unitSystem: 'metric',
+                limb: 'L' // Default Lower Limb
+            });
+            const [almData, setAlmData] = useState({ ghaWhole: null, decWhole: null, v: 0, d: 0, sd: 0, hp: 0, sha: null, ghaAries: null });
+            const [lops, setLops] = useState([]);
+            const [selectedLops, setSelectedLops] = useState(new Set());
+            const [modalConfig, setModalConfig] = useState(null);
+            const [helpKey, setHelpKey] = useState(null);
+
+            useEffect(() => {
+                try {
+                    const savedObs = localStorage.getItem('obsData');
+                    if (savedObs) {
+                         const parsed = JSON.parse(savedObs);
+                         setObsData(prev => ({ 
+                             ...prev, 
+                             ...parsed, 
+                             pressure: parsed.pressure || '1013', 
+                             temperature: parsed.temperature || '15',
+                             unitSystem: parsed.unitSystem || 'metric',
+                             apLatDir: parsed.apLatDir || 'N', 
+                             apLonDir: parsed.apLonDir || 'W',
+                             limb: parsed.limb || 'L'
+                         }));
+                    }
+                    const savedLops = localStorage.getItem('lops');
+                    if (savedLops) setLops(JSON.parse(savedLops));
+                } catch(e) {}
+            }, []);
+            useEffect(() => { localStorage.setItem('obsData', JSON.stringify(obsData)); }, [obsData]);
+            useEffect(() => { localStorage.setItem('lops', JSON.stringify(lops)); }, [lops]);
+
+            const handleSaveLop = (zn, intercept) => {
+                if (!obsData.body || isNaN(intercept)) return;
+                const newLop = {
+                    id: Date.now(),
+                    body: obsData.body,
+                    time: obsData.dateTime,
+                    apLatDeg: obsData.apLatDeg, apLatMin: obsData.apLatMin,
+                    apLonDeg: obsData.apLonDeg, apLonMin: obsData.apLonMin,
+                    course: obsData.course, speed: obsData.speed,
+                    zn: parseFloat(zn).toFixed(1),
+                    intercept: parseFloat(intercept).toFixed(1),
+                    interceptDir: intercept >= 0 ? 'T' : 'A'
+                };
+                setLops([...lops, newLop]);
+            };
+
+            const handleReset = () => { 
+                setModalConfig({
+                    type: 'confirm',
+                    message: 'Are you sure you want to clear all data? This cannot be undone.',
+                    onConfirm: () => { localStorage.clear(); window.location.reload(); }
+                });
+            };
+
+            const handleDeleteLops = () => { setLops(lops.filter(lop => !selectedLops.has(lop.id))); setSelectedLops(new Set()); };
+            
+            const handlePlot = () => { 
+                if (selectedLops.size > 0) setShowPlotter(true); 
+                else setModalConfig({ type: 'alert', message: 'Select at least one LOP to plot.', onConfirm: () => setModalConfig(null) });
+            };
+
+            const handleIdentify = () => {
+                 if (!obsData.dateTime || !obsData.hsDeg) {
+                    setModalConfig({ type: 'alert', message: 'Please enter at least Time and Sextant Altitude (Hs) to identify a body.', onConfirm: () => setModalConfig(null) });
+                    return;
+                 }
+                 setShowIdentify(true);
+            };
+
+            const handleSelectIdentify = (candidate) => {
+                setObsData(prev => ({ ...prev, body: candidate.name, limb: 'L' }));
+                const d = new Date(obsData.dateTime);
+                const type = candidate.type === 'Planet' ? candidate.name : 'Star';
+                const name = candidate.type === 'Planet' ? null : candidate.name;
+                const alm = NavMath.calculateAlmanac(d, type, name);
+                if(alm) {
+                    const isStar = candidate.type === 'Star';
+                    setAlmData({
+                        ...alm,
+                        ghaWhole: isStar ? alm.ghaAries : alm.gha, 
+                        decWhole: alm.dec
+                    });
+                }
+                setShowIdentify(false);
+            };
+            
+            const handleShowHO229 = (lat, lha, dec) => {
+                setHo229Params({ lat, lha, dec });
+                setShowHO229(true);
+            };
+
+            const toggleLopSelection = (id) => { const next = new Set(selectedLops); if (next.has(id)) next.delete(id); else next.add(id); setSelectedLops(next); };
+
+            return (
+                <div className={`min-h-screen pb-12 ${isRedMode ? 'red-mode' : ''}`}>
+                    {showAlmanac && <AlmanacModal onClose={() => setShowAlmanac(false)} onSelectData={(d) => { setObsData(p => ({...p, body: d.body, limb: d.limb, dateTime: d.time.toISOString()})); setAlmData(d); }} />}
+                    {showPlotter && <PlotterModal lops={lops.filter(l => selectedLops.has(l.id))} onClose={() => setShowPlotter(false)} />}
+                    {showIdentify && <IdentifyModal obsData={obsData} onClose={() => setShowIdentify(false)} onSelect={handleSelectIdentify} />}
+                    {showHO229 && ho229Params && <HO229Modal lat={ho229Params.lat} lha={ho229Params.lha} dec={ho229Params.dec} onClose={() => setShowHO229(false)} />}
+                    {modalConfig && <NotificationModal message={modalConfig.message} type={modalConfig.type} onConfirm={() => { modalConfig.onConfirm(); setModalConfig(null); }} onCancel={() => setModalConfig(null)} />}
+                    {helpKey && <StudyModal helpKey={helpKey} onClose={() => setHelpKey(null)} />}
+
+                    <Header onReset={handleReset} isRedMode={isRedMode} setIsRedMode={setIsRedMode} isStudyMode={isStudyMode} setIsStudyMode={setIsStudyMode} />
+
+                    <main className="max-w-6xl mx-auto p-4 space-y-6">
+                        <ObservationCard 
+                            obsData={obsData} 
+                            setObsData={setObsData} 
+                            onOpenAlmanac={() => setShowAlmanac(true)} 
+                            onIdentify={handleIdentify}
+                            isStudyMode={isStudyMode}
+                            onShowHelp={setHelpKey}
+                        />
+                        <WorksheetCard 
+                            obsData={obsData} 
+                            setObsData={setObsData}
+                            almData={almData} 
+                            onSave={handleSaveLop} 
+                            isStudyMode={isStudyMode}
+                            onShowHelp={setHelpKey}
+                            onShowHO229={handleShowHO229}
+                            setModalConfig={setModalConfig}
+                        />
+                        <LopTable lops={lops} selectedLops={selectedLops} toggleLopSelection={toggleLopSelection} onDelete={handleDeleteLops} onPlot={handlePlot} />
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SightForm />);
+        
+        setInterval(() => { if (window.lucide) window.lucide.createIcons(); }, 1000);
+    </script>
+</body>
+</html>

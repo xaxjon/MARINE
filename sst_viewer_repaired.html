@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SST Satellite Imaging - Tuna Operations</title>
+    <meta name="description" content="Professional viewer for NOAA SST charts with temperature analysis and route profiling.">
+   
+    <style>
+        /* =========================================
+           1. CORE LAYOUT & THEME
+           ========================================= */
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: rgba(13, 17, 23, 0.95);
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-blue: #58a6ff;
+            --accent-orange: #ffab70;
+            --accent-red: #f85149;
+            --accent-green: #238636;
+            --accent-cyan: #3fb950;
+            --accent-purple: #d2a8ff;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Canvas Container */
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background-color: #000;
+            cursor: crosshair;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            image-rendering: pixelated; 
+        }
+
+        /* =========================================
+           2. HUD & OVERLAYS
+           ========================================= */
+        
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 16px;
+            border-radius: 8px;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+            min-width: 250px;
+            backdrop-filter: blur(8px);
+            z-index: 20;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        .hud-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .hud-val {
+            color: var(--accent-blue);
+            font-weight: 700;
+        }
+
+        .hud-val.temp { color: var(--accent-orange); font-size: 16px; }
+        .hud-val.ice { color: var(--accent-purple); font-size: 16px; }
+        .hud-val.good { color: var(--accent-green); }
+
+        .divider {
+            border-top: 1px solid var(--border-color);
+            margin: 12px 0;
+        }
+
+        /* Profile Panel */
+        #profile-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+            backdrop-filter: blur(8px);
+            z-index: 20;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            width: 260px;
+        }
+
+        #profile-header {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+        }
+
+        #profile-title {
+            font-size: 12px; color: var(--text-secondary); font-weight: 700; text-transform: uppercase;
+        }
+
+        #profile-stats {
+            font-size: 11px; color: var(--accent-blue); font-family: monospace;
+        }
+
+        #profileCanvas {
+            width: 100%; height: 100px; background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border-color); border-radius: 4px;
+        }
+
+        /* =========================================
+           3. CONTROLS
+           ========================================= */
+
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: var(--panel-bg);
+            padding: 10px 20px;
+            border-radius: 40px;
+            border: 1px solid var(--border-color);
+            z-index: 30;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+
+        button {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        button:hover { background: #30363d; color: #fff; transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
+        
+        button.active {
+            background: #1f6feb; border-color: #1f6feb; color: white;
+            box-shadow: 0 0 10px rgba(31, 111, 235, 0.4);
+        }
+
+        button#btn-palette { border-color: var(--accent-purple); color: var(--accent-purple); }
+        button#btn-palette:hover { background: #3a1d4a; color: #fff; }
+
+        button#btn-clear-run {
+            border-color: rgba(248, 81, 73, 0.4); color: var(--accent-red); display: none;
+        }
+        button#btn-clear-run:hover { background: #b62324; color: white; border-color: #b62324; }
+
+        /* Link Button Style */
+        button#btn-download {
+            border-color: var(--accent-green); color: var(--accent-green);
+        }
+        button#btn-download:hover {
+            background: #1a3b25; color: #fff;
+        }
+
+        /* Loading */
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85); color: #fff; padding: 24px 40px;
+            border-radius: 12px; pointer-events: none; text-align: center;
+            display: none; z-index: 50; backdrop-filter: blur(4px);
+            border: 1px solid var(--border-color);
+        }
+
+        #startup-msg {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            color: var(--accent-blue); font-family: monospace; font-size: 18px;
+            pointer-events: none; text-align: center; line-height: 1.6; z-index: 5;
+            display: flex; flex-direction: column; align-items: center; gap: 15px;
+        }
+        
+        #brand-logo {
+            max-width: 250px;
+            height: auto;
+            margin-bottom: 5px;
+        }
+
+        #hint {
+            position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.4); font-size: 12px; pointer-events: none;
+            text-shadow: 0 2px 4px black; display: none;
+        }
+
+        /* Help & Modal */
+        #top-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 40;
+        }
+
+        #map-brand-logo {
+            height: 28px;
+            width: auto;
+            opacity: 0.8;
+        }
+
+        #help-icon {
+            width: 32px; height: 32px;
+            border-radius: 50%; background: var(--panel-bg); border: 1px solid var(--border-color);
+            color: var(--text-primary); font-weight: bold; text-align: center; line-height: 30px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        #help-icon:hover { background: var(--accent-blue); color: #000; border-color: var(--accent-blue); }
+
+        #modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 100; display: none;
+            justify-content: center; align-items: center; backdrop-filter: blur(4px);
+        }
+        #modal-box {
+            background: #161b22; width: 600px; max-width: 90%;
+            border: 1px solid var(--border-color); border-radius: 12px; padding: 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.9);
+            position: relative;
+        }
+        #modal-box h2 { margin-top: 0; color: var(--accent-blue); }
+        #modal-box p, #modal-box li { color: #c9d1d9; line-height: 1.6; font-size: 14px; }
+        #modal-close {
+            background: var(--accent-green); color: #fff; border: none; padding: 8px 20px;
+            border-radius: 6px; cursor: pointer; float: right; font-weight: bold;
+        }
+        #modal-close:hover { background: #2ea043; }
+        
+        #modal-brand {
+            display: block;
+            max-width: 180px;
+            margin-bottom: 20px;
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <canvas id="mainCanvas"></canvas>
+        <div id="startup-msg">
+            <img id="brand-logo" src="https://xaxero.com/images/XaxeroLogoSansSloganCopy.png" alt="Xaxero">
+            <span style="color:#8b949e; font-size:14px;">NOAA SST ANALYZER<br>Open Chart to Begin</span>
+        </div>
+        <div id="hint">Double-click to Plot Fishing Run</div>
+    </div>
+
+    <div id="hud">
+        <div class="hud-row"><span>LATITUDE</span> <span class="hud-val" id="lat-disp">--</span></div>
+        <div class="hud-row"><span>LONGITUDE</span> <span class="hud-val" id="lon-disp">--</span></div>
+        <div class="divider"></div>
+        <div class="hud-row"><span>SURFACE TEMP</span> <span class="hud-val temp" id="temp-disp">--</span></div>
+        <div class="hud-row"><span>CALIBRATION</span> <span class="hud-val" id="calib-disp">Default CSV</span></div>
+        <div class="divider"></div>
+        <div class="hud-row"><span>ZOOM</span> <span class="hud-val" id="zoom-disp">Global</span></div>
+        <div class="hud-row"><span>PROJECTION</span> <span class="hud-val" id="proj-disp">150°W</span></div>
+    </div>
+
+    <div id="profile-panel">
+        <div id="profile-header">
+            <div id="profile-title">Temperature Profile</div>
+            <div id="profile-stats">-- NM | Avg: --°C</div>
+        </div>
+        <canvas id="profileCanvas" width="234" height="100"></canvas>
+    </div>
+
+    <div id="top-controls">
+        <img id="map-brand-logo" src="https://xaxero.com/images/XaxeroLogoSansSloganCopy.png" alt="Xaxero">
+        <div id="help-icon">?</div>
+    </div>
+
+    <div id="controls">
+        <button id="btn-download" title="Go to NOAA Website">Download SST Map</button>
+        <button id="btn-open">Open Chart</button>
+        <button id="btn-palette" title="Load custom RGB.csv">Load Palette</button>
+        <button id="btn-center">Center: 150°W</button>
+        <button id="btn-reset">Reset View</button>
+        <button id="btn-he" class="active">Enhance: On</button>
+        <button id="btn-clear-run">Clear Run</button>
+        
+        <input type="file" id="file-upload" accept="image/*,.csv" style="display:none">
+    </div>
+
+    <div id="loading">Processing Data...</div>
+
+    <div id="modal-overlay">
+        <div id="modal-box">
+            <img id="modal-brand" src="https://xaxero.com/images/XaxeroLogoSansSloganCopy.png" alt="Xaxero">
+            <button id="modal-close">OK</button>
+            <h2>SST Viewer Instructions</h2>
+            <p><strong>1. Workflow:</strong></p>
+            <ul>
+                <li>Click <strong>'Download SST Map'</strong> to open the NOAA website.</li>
+                <li>Select your desired chart region and date.</li>
+                <li>Right-click the chart image and select <strong>'Save Image As...'</strong> to save it to your device.</li>
+                <li>Return to this viewer and click <strong>'Open Chart'</strong> to load the saved file.</li>
+            </ul>
+            <p><strong>2. Calibration:</strong> The viewer uses your custom palette data by default.</p>
+            <p><strong>3. Operation:</strong></p>
+            <ul>
+                <li><strong>Pan/Zoom:</strong> Drag to move, Scroll to zoom.</li>
+                <li><strong>Inspect:</strong> Hover to see Lat/Lon/Temp.</li>
+                <li><strong>Profile:</strong> Double-click two points to plot a temperature graph for a fishing run.</li>
+                <li><strong>Enhance:</strong> Toggles histogram equalization for better contrast.</li>
+            </ul>
+        </div>
+    </div>
+   <!-- Logging interface -->
+    <script src="https://xaxero.com/dlog/tracker.js" data-app-name="SST Complex"></script>
+  
+<script>
+    /**
+     * =========================================================================
+     * SST VIEWER - LOGIC CORE
+     * =========================================================================
+     */
+
+    // --- 1. CONFIGURATION ---
+    
+    // EMBEDDED DEFAULT PALETTE (From rgb.csv)
+    // Range: -2 to 35
+    // NOTE: White (-5 to -2.5) handled via Special Mappings
+    const DEFAULT_CSV_DATA = `
+Temp (°C),R,G,B
+-2,100,0,0
+-1.5,105,0,30
+-1,110,0,60
+-0.5,115,0,90
+0,120,0,120
+0.5,108,0,123
+1,96,0,126
+1.5,84,0,129
+2,72,0,132
+2.5,60,0,135
+3,48,0,138
+3.5,36,0,141
+4,24,0,144
+4.5,12,0,147
+5,0,0,150
+5.5,0,0,160
+6,0,0,171
+6.5,0,0,181
+7,0,0,192
+7.5,0,0,202
+8,0,0,213
+8.5,0,0,223
+9,0,0,234
+9.5,0,0,244
+10,0,0,255
+10.5,0,25,255
+11,0,51,255
+11.5,0,76,255
+12,0,102,255
+12.5,0,127,255
+13,0,153,255
+13.5,0,178,255
+14,0,204,255
+14.5,0,229,255
+15,0,255,255
+15.5,0,255,229
+16,0,255,204
+16.5,0,255,178
+17,0,255,153
+17.5,0,255,127
+18,0,255,102
+18.5,0,255,76
+19,0,255,51
+19.5,0,255,25
+20,0,255,0
+20.5,25,255,0
+21,51,255,0
+21.5,76,255,0
+22,102,255,0
+22.5,127,255,0
+23,153,255,0
+23.5,178,255,0
+24,204,255,0
+24.5,229,255,0
+25,255,255,0
+25.5,255,242,0
+26,255,229,0
+26.5,255,216,0
+27,255,204,0
+27.5,255,191,0
+28,255,178,0
+28.5,255,165,0
+29,255,153,0
+29.5,255,140,0
+30,255,128,0
+30.5,255,115,0
+31,255,102,0
+31.5,255,89,0
+32,255,76,0
+32.5,255,64,0
+33,255,51,0
+33.5,255,38,0
+34,255,25,0
+34.5,255,12,0
+35,255,0,0
+`;
+
+    // Special mappings for Non-Data pixels (Ice, No Data, Land)
+    const SPECIAL_MAPPINGS = [
+        { r: 255, g: 255, b: 255, temp: -5.0, label: "ICE", tolerance: 10 },
+        { r: 240, g: 240, b: 240, temp: -5.0, label: "ICE", tolerance: 10 },
+        { r: 0,   g: 0,   b: 0,   temp: null, label: "NO DATA", tolerance: 5 },
+        { r: 50,  g: 50,  b: 50,  temp: null, label: "LAND", tolerance: 20 }
+    ];
+
+    const ENHANCE_PALETTE = new Uint8Array(256 * 3);
+
+    // --- 2. STATE ---
+    const state = {
+        sourceImage: null,
+        originalImageData: null,
+        
+        mapBounds: { top: 0, bottom: 1, left: 0, right: 1 },
+        projectionCenter: -150,
+        
+        lat: 0, lon: 0, zoom: 1,
+        
+        enhanceEnabled: true,
+        
+        isDragging: false,
+        dragStart: { x: 0, y: 0 },
+        lastView: { lat: 0, lon: 0 },
+        
+        run: { active: false, step: 0, start: {lat:0,lon:0}, end: {lat:0,lon:0} },
+
+        offscreenCanvas: null,
+        
+        // LUT State
+        referenceLUT: [],      // The active lookup table
+        usingCustomLUT: false  // Flag for UI
+    };
+
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const profileCanvas = document.getElementById('profileCanvas');
+    const profileCtx = profileCanvas.getContext('2d');
+
+    // --- 3. INIT ---
+    function init() {
+        // Load Default CSV immediately
+        parsePaletteCSV(DEFAULT_CSV_DATA, true); 
+        
+        generateEnhancePalette();
+        setupUI();
+        setupInteraction();
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        requestAnimationFrame(renderLoop);
+    }
+
+    function setupUI() {
+        const fileInput = document.getElementById('file-upload');
+        
+        document.getElementById('btn-download').onclick = () => {
+            window.open('https://www.ospo.noaa.gov/products/ocean/sst/blended_sst_5km.html?product=bdn', '_blank');
+        };
+
+        document.getElementById('btn-open').onclick = () => {
+            fileInput.accept = "image/*";
+            fileInput.click();
+        };
+        
+        document.getElementById('btn-palette').onclick = () => {
+            fileInput.accept = ".csv";
+            fileInput.click();
+        };
+        
+        fileInput.onchange = (e) => {
+            if (e.target.files && e.target.files[0]) {
+                const f = e.target.files[0];
+                if(f.name.toLowerCase().endsWith('.csv')) {
+                    loadCSV(f);
+                } else {
+                    loadImage(f);
+                }
+            }
+            e.target.value = '';
+        };
+
+        document.getElementById('btn-center').onclick = () => {
+            if (state.projectionCenter === -150) state.projectionCenter = 180;
+            else if (state.projectionCenter === 180) state.projectionCenter = 0;
+            else state.projectionCenter = -150;
+            updateProjText();
+            requestAnimationFrame(renderLoop);
+        };
+
+        document.getElementById('btn-reset').onclick = resetView;
+        
+        document.getElementById('btn-he').onclick = (e) => {
+            state.enhanceEnabled = !state.enhanceEnabled;
+            e.target.classList.toggle('active');
+            e.target.textContent = state.enhanceEnabled ? "Enhance: On" : "Enhance: Off";
+            requestAnimationFrame(renderLoop);
+        };
+
+        document.getElementById('btn-clear-run').onclick = clearRun;
+        document.getElementById('help-icon').onclick = () => document.getElementById('modal-overlay').style.display = 'flex';
+        document.getElementById('modal-close').onclick = () => document.getElementById('modal-overlay').style.display = 'none';
+        
+        canvas.oncontextmenu = (e) => e.preventDefault();
+    }
+
+    // --- 4. LOADERS ---
+
+    function loadImage(file) {
+        document.getElementById('loading').style.display = 'block';
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                state.sourceImage = img;
+                const c = document.createElement('canvas');
+                c.width = img.width; c.height = img.height;
+                const tCtx = c.getContext('2d');
+                tCtx.drawImage(img, 0, 0);
+                state.originalImageData = tCtx.getImageData(0, 0, img.width, img.height);
+                
+                performSmartCrop();
+                updateProjText();
+                resetView();
+                
+                document.getElementById('startup-msg').style.display = 'none';
+                document.getElementById('hud').style.display = 'block';
+                document.getElementById('hint').style.display = 'block';
+                document.getElementById('loading').style.display = 'none';
+                requestAnimationFrame(renderLoop);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function loadCSV(file) {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loading').textContent = "Parsing Palette...";
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target.result;
+            parsePaletteCSV(text, false);
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('loading').textContent = "Processing...";
+            if(state.run.step === 2) updateProfileGraph();
+            requestAnimationFrame(renderLoop);
+        };
+        reader.readAsText(file);
+    }
+
+    function parsePaletteCSV(csvText, isDefault) {
+        const lines = csvText.split(/\r?\n/);
+        const newLUT = [];
+        let validLines = 0;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if(!line || line.startsWith('Temp')) continue; 
+            
+            const parts = line.split(',');
+            if(parts.length < 4) continue;
+            
+            const t = parseFloat(parts[0]);
+            const r = parseInt(parts[1]);
+            const g = parseInt(parts[2]);
+            const b = parseInt(parts[3]);
+            
+            if(!isNaN(t) && !isNaN(r) && !isNaN(g) && !isNaN(b)) {
+                newLUT.push({ t, r, g, b });
+                validLines++;
+            }
+        }
+        
+        if(validLines > 10) {
+            state.referenceLUT = newLUT;
+            state.usingCustomLUT = true;
+            document.getElementById('calib-disp').textContent = isDefault ? "Default CSV" : "Custom CSV";
+            document.getElementById('calib-disp').className = "hud-val good";
+            console.log(`Loaded ${isDefault ? 'default' : 'custom'} palette with ${validLines} points.`);
+        } else {
+            console.error("Error: CSV invalid.");
+        }
+    }
+
+    function performSmartCrop() {
+        if (!state.originalImageData) return;
+        state.mapBounds = detectContentBounds(state.originalImageData);
+    }
+
+    function detectContentBounds(imgData) {
+        const w = imgData.width, h = imgData.height, d = imgData.data;
+        const isWhite = (idx) => d[idx]>225 && d[idx+1]>225 && d[idx+2]>225;
+        const isRowEmpty = (y) => {
+            let wc = 0, samples = 50, step = Math.floor(w/samples);
+            for(let x=0; x<w; x+=step) if(isWhite((y*w+x)*4)) wc++;
+            return (wc/samples) > 0.8;
+        };
+
+        let centerY = Math.floor(h/2);
+        if (isRowEmpty(centerY)) {
+            let found = false;
+            for (let off=0; off<h/4; off+=10) {
+                if(!isRowEmpty(centerY-off)){centerY-=off;found=true;break;}
+                if(!isRowEmpty(centerY+off)){centerY+=off;found=true;break;}
+            }
+            if(!found) return {top:0,bottom:1,left:0,right:1};
+        }
+
+        let topY = 0;
+        for (let y=centerY; y>=0; y--) {
+            if(isRowEmpty(y)) {
+                let solid=true; for(let k=1; k<=5; k++) if(y-k>=0 && !isRowEmpty(y-k)){solid=false;break;}
+                if(solid){ topY=y+1; break; }
+            }
+        }
+
+        let botY = h;
+        for (let y=centerY; y<h; y++) {
+            if(isRowEmpty(y)) {
+                let solid=true; for(let k=1; k<=5; k++) if(y+k<h && !isRowEmpty(y+k)){solid=false;break;}
+                if(solid){ botY=y; break; }
+            }
+        }
+
+        let leftX=0, rightX=w, midY=Math.floor((topY+botY)/2);
+        for(let x=0; x<w/2; x+=5) if(!isWhite((midY*w+x)*4)){leftX=x;break;}
+        for(let x=w-1; x>w/2; x-=5) if(!isWhite((midY*w+x)*4)){rightX=x;break;}
+
+        return { top: topY/h, bottom: botY/h, left: leftX/w, right: rightX/w };
+    }
+
+    // --- 5. INTERACTION ---
+
+    function setupInteraction() {
+        canvas.addEventListener('mousedown', (e) => {
+            if (!state.sourceImage || e.button !== 0) return;
+            state.isDragging = true;
+            state.dragStart = { x: e.clientX, y: e.clientY };
+            state.lastView = { lat: state.lat, lon: state.lon };
+            canvas.style.cursor = 'grabbing';
+        });
+
+        window.addEventListener('mouseup', () => {
+            state.isDragging = false; canvas.style.cursor = 'crosshair';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!state.sourceImage) return;
+            if (state.isDragging) {
+                const dx = e.clientX - state.dragStart.x;
+                const dy = e.clientY - state.dragStart.y;
+                const degH = 180 / state.zoom;
+                const aspect = canvas.width / canvas.height;
+                const rad = state.lat * Math.PI / 180;
+                const degW = (degH * aspect) / Math.max(0.1, Math.cos(rad));
+                state.lat = state.lastView.lat + (dy * (degH/canvas.height));
+                state.lon = state.lastView.lon - (dx * (degW/canvas.width));
+                if(state.lat > 85) state.lat = 85; if(state.lat < -85) state.lat = -85;
+                requestAnimationFrame(renderLoop);
+            }
+            updateHUD(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            if (!state.sourceImage) return;
+            e.preventDefault();
+            let newZoom = state.zoom / (1 + e.deltaY * 0.001);
+            if (newZoom < 0.8) newZoom = 0.8; if (newZoom > 200) newZoom = 200;
+            state.zoom = newZoom;
+            requestAnimationFrame(renderLoop);
+        }, { passive: false });
+
+        canvas.addEventListener('dblclick', (e) => {
+            if (!state.sourceImage) return;
+            const coords = pxToLatLon(e.clientX, e.clientY);
+            if (!coords) return;
+            if (state.run.step === 0 || state.run.step === 2) {
+                state.run.active = true; state.run.step = 1; state.run.start = coords; state.run.end = coords;
+                document.getElementById('btn-clear-run').style.display = 'block';
+                document.getElementById('profile-panel').style.display = 'none';
+            } else {
+                state.run.step = 2; state.run.end = coords;
+                updateProfileGraph();
+                document.getElementById('profile-panel').style.display = 'block';
+            }
+            requestAnimationFrame(renderLoop);
+        });
+    }
+
+    function pxToLatLon(x, y) {
+        const degH = 180 / state.zoom;
+        const aspect = canvas.width / canvas.height;
+        const rad = state.lat * Math.PI / 180;
+        const degW = (degH * aspect) / Math.max(0.1, Math.cos(rad));
+        const topLat = state.lat + degH/2;
+        const leftLon = state.lon - degW/2;
+        const lat = topLat - (y / canvas.height) * degH;
+        let lon = leftLon + (x / canvas.width) * degW;
+        return { lat: lat, lon: normalizeLon(lon) };
+    }
+
+    function updateHUD(x, y) {
+        const coords = pxToLatLon(x, y);
+        if (!coords) return;
+        document.getElementById('lat-disp').textContent = formatCoord(coords.lat, true);
+        document.getElementById('lon-disp').textContent = formatCoord(coords.lon, false);
+        document.getElementById('zoom-disp').textContent = state.zoom.toFixed(1) + "x";
+
+        const val = getTempAtLatLon(coords.lat, coords.lon);
+        const el = document.getElementById('temp-disp');
+        el.className = "hud-val";
+        if (val === null) { el.textContent = "--"; el.style.color = "#8b949e"; }
+        else if (typeof val === 'string') {
+            el.textContent = val;
+            if(val==="ICE") { el.classList.add("ice"); } 
+            else { el.style.color="#8b444e"; }
+        } else {
+            el.textContent = val.toFixed(2) + "°C";
+            el.classList.add("temp");
+            el.style.color = val>25 ? "#f85149" : (val<10 ? "#58a6ff" : "#ffab70");
+        }
+    }
+
+    // --- 6. RENDER ---
+
+    function renderLoop() {
+        if (!state.sourceImage) return;
+        const vW = canvas.width, vH = canvas.height;
+        const degH = 180 / state.zoom;
+        const aspect = vW / vH;
+        const degW = (degH * aspect) / Math.max(0.1, Math.cos(state.lat * Math.PI / 180));
+        const topLat = state.lat + degH/2, leftLon = state.lon - degW/2;
+
+        if (!state.offscreenCanvas) state.offscreenCanvas = document.createElement('canvas');
+        if (state.offscreenCanvas.width !== vW || state.offscreenCanvas.height !== vH) {
+            state.offscreenCanvas.width = vW; state.offscreenCanvas.height = vH;
+        }
+        const bCtx = state.offscreenCanvas.getContext('2d', { willReadFrequently: true });
+        bCtx.fillStyle = '#0d1117'; bCtx.fillRect(0, 0, vW, vH);
+
+        const imgH = state.sourceImage.height, imgW = state.sourceImage.width;
+        const mapTop = state.mapBounds.top * imgH, mapH = (state.mapBounds.bottom - state.mapBounds.top) * imgH;
+        const mapLeft = state.mapBounds.left * imgW, mapW = (state.mapBounds.right - state.mapBounds.left) * imgW;
+        
+        const srcY = ((90 - topLat) / 180) * mapH + mapTop;
+        const srcH = (degH / 180) * mapH;
+        const startSrcX = getSourceX(leftLon, mapW, mapLeft);
+        const totalSrcW = (degW / 360) * mapW;
+
+        let drawn=0, curX=startSrcX;
+        for (let i=0; i<3; i++) {
+            if(drawn >= totalSrcW) break;
+            let relX = ((curX - mapLeft) % mapW + mapW) % mapW;
+            let actX = relX + mapLeft;
+            let avail = (mapLeft + mapW) - actX;
+            let slice = Math.min(avail, totalSrcW - drawn);
+            let dstX = (drawn / totalSrcW) * vW;
+            let dstW = (slice / totalSrcW) * vW;
+            if (srcY >= 0 && srcY + srcH <= imgH) {
+                bCtx.drawImage(state.sourceImage, actX, srcY, slice, srcH, dstX, 0, dstW, vH);
+            }
+            drawn += slice; curX += slice;
+        }
+
+        if (state.enhanceEnabled) applyHistogramEqualization(bCtx, vW, vH);
+        
+        ctx.clearRect(0, 0, vW, vH);
+        ctx.drawImage(state.offscreenCanvas, 0, 0);
+
+        drawGrid(degH, degW, topLat, leftLon);
+        if (state.run.active) drawRunOverlay(topLat, leftLon, degH, degW);
+        drawScaleBar(degH);
+    }
+
+    // --- 7. IMAGE & MATH ---
+
+    function generateEnhancePalette() {
+        for (let i=0; i<256; i++) {
+            const t = i/255; let r=0,g=0,b=0;
+            if(t<0.25){ let p=t/0.25; r=0; g=Math.floor(255*p); b=255; }
+            else if(t<0.5){ let p=(t-0.25)/0.25; r=0; g=255; b=Math.floor(255*(1-p)); }
+            else if(t<0.75){ let p=(t-0.5)/0.25; r=Math.floor(255*p); g=255; b=0; }
+            else { let p=(t-0.75)/0.25; r=255; g=Math.floor(255*(1-p)); b=0; }
+            ENHANCE_PALETTE[i*3]=r; ENHANCE_PALETTE[i*3+1]=g; ENHANCE_PALETTE[i*3+2]=b;
+        }
+    }
+
+    function applyHistogramEqualization(ctx, w, h) {
+        const id = ctx.getImageData(0,0,w,h); const d = id.data;
+        const hist=new Uint32Array(256), cache=new Uint8Array(d.length/4);
+        let count=0, minVal=255;
+
+        for(let i=0; i<d.length; i+=4) {
+            const r=d[i], g=d[i+1], b=d[i+2];
+            if(r>225&&g>225&&b>225) continue; 
+            const sat=Math.max(r,g,b)-Math.min(r,g,b);
+            if(sat<20&&r<200) continue;
+            if(r<10&&g<10&&b<10) continue;
+
+            let hVal=0, mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+            if(mx!==mn) {
+                if(mx===r) hVal=(g-b)/(mx-mn);
+                else if(mx===g) hVal=2+(b-r)/(mx-mn);
+                else hVal=4+(r-g)/(mx-mn);
+                hVal*=60; if(hVal<0) hVal+=360;
+            }
+            let metric=280-hVal; if(metric<0)metric=0; if(metric>280)metric=280;
+            const val=Math.floor(metric*(255/280));
+            cache[i/4]=val; hist[val]++; if(val<minVal)minVal=val; count++;
+        }
+
+        const cdf=new Uint32Array(256); let acc=0;
+        for(let i=0; i<256; i++) { acc+=hist[i]; cdf[i]=acc; }
+        const cdfMin=cdf[minVal], range=count-cdfMin;
+
+        if(range>0) {
+            for(let i=0; i<d.length; i+=4) {
+                const r=d[i], g=d[i+1], b=d[i+2];
+                const sat=Math.max(r,g,b)-Math.min(r,g,b);
+                if((sat<20&&r<200)||(r>225&&g>225&&b>225)||(r<10&&g<10&&b<10)) continue;
+                
+                const val=cache[i/4];
+                const eq=Math.floor(((cdf[val]-cdfMin)/range)*255);
+                const pIdx=eq*3;
+                d[i]=ENHANCE_PALETTE[pIdx]; d[i+1]=ENHANCE_PALETTE[pIdx+1]; d[i+2]=ENHANCE_PALETTE[pIdx+2];
+            }
+        }
+        ctx.putImageData(id,0,0);
+    }
+
+    function getRGBAtLatLon(lat, lon) {
+        if (!state.originalImageData) return null;
+        const imgH = state.sourceImage.height, imgW = state.sourceImage.width;
+        const mapTop = state.mapBounds.top * imgH;
+        const mapH = (state.mapBounds.bottom - state.mapBounds.top) * imgH;
+        const mapLeft = state.mapBounds.left * imgW;
+        const mapW = (state.mapBounds.right - state.mapBounds.left) * imgW;
+        const sy = ((90 - lat) / 180) * mapH + mapTop;
+        const sx = getSourceX(lon, mapW, mapLeft);
+        const ix = Math.floor(sx), iy = Math.floor(sy);
+        if (ix >= 0 && ix < imgW && iy >= 0 && iy < imgH) {
+            const idx = (iy * imgW + ix) * 4;
+            const d = state.originalImageData.data;
+            return { r: d[idx], g: d[idx+1], b: d[idx+2] };
+        }
+        return null;
+    }
+
+    function getTempAtLatLon(lat, lon) {
+        if (!state.originalImageData) return null;
+        const rgb = getRGBAtLatLon(lat, lon);
+        if (!rgb) return null;
+        return colorToTemp(rgb.r, rgb.g, rgb.b);
+    }
+
+    function colorToTemp(r, g, b) {
+        // 1. Special Mappings Check
+        for (const m of SPECIAL_MAPPINGS) {
+            if (Math.abs(r - m.r) <= m.tolerance && 
+                Math.abs(g - m.g) <= m.tolerance && 
+                Math.abs(b - m.b) <= m.tolerance) {
+                return m.temp !== null ? (m.label === "ICE" ? m.temp : m.label) : m.label;
+            }
+        }
+
+        // 2. AGGRESSIVE Interpolation Logic
+        // Find 4 nearest neighbors (not just 2) to better handle gaps/noise
+        // Use a larger tolerance
+        
+        let nearest = []; // Array of {dist, temp}
+        
+        for (let i = 0; i < state.referenceLUT.length; i++) {
+            const p = state.referenceLUT[i];
+            const d = (r - p.r)**2 + (g - p.g)**2 + (b - p.b)**2;
+            
+            // Optimization: Keep top 4 sorted
+            if(nearest.length < 4) {
+                nearest.push({d: d, t: p.t});
+                nearest.sort((a,b) => a.d - b.d);
+            } else if (d < nearest[3].d) {
+                nearest[3] = {d: d, t: p.t};
+                nearest.sort((a,b) => a.d - b.d);
+            }
+        }
+
+        // Expanded Tolerance: Euclidean dist approx 80-90 (sq dist ~7000)
+        // Compression artifacts can shift colors significantly
+        if (nearest[0].d > 7000) return null; 
+
+        // If extremely close match, return immediately
+        if (nearest[0].d < 10) return nearest[0].t;
+
+        // Inverse Distance Weighting (IDW)
+        // Power of 2 is standard for IDW
+        let sumWeights = 0;
+        let weightedTemp = 0;
+        
+        // Use top 2 neighbors primarily, use 3rd/4th only if they are reasonably close
+        let count = 2; 
+        if(nearest[2] && nearest[2].d < nearest[0].d * 2) count = 3;
+        if(nearest[3] && nearest[3].d < nearest[0].d * 2) count = 4;
+
+        for(let k=0; k<count; k++) {
+            // Add tiny epsilon to avoid div by zero
+            let w = 1.0 / (nearest[k].d + 0.0001); 
+            // Square weight to favor closer matches more strongly
+            w = w * w; 
+            
+            sumWeights += w;
+            weightedTemp += nearest[k].t * w;
+        }
+
+        return weightedTemp / sumWeights;
+    }
+
+    function getSourceX(lon, mapW, mapLeft) {
+        let delta = lon - state.projectionCenter + 180;
+        while (delta < 0) delta += 360; while (delta >= 360) delta -= 360;
+        return (delta / 360) * mapW + mapLeft;
+    }
+
+    // --- 8. UTILS ---
+
+    function handleResize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; requestAnimationFrame(renderLoop); }
+    function resetView() { state.lat = 0; state.lon = 0; state.zoom = 1; requestAnimationFrame(renderLoop); }
+    function normalizeLon(l) { while (l > 180) l -= 360; while (l < -180) l += 360; return l; }
+    function formatCoord(val, isLat) {
+        let abs = Math.abs(val), deg = Math.floor(abs), min = (abs - deg) * 60;
+        return `${deg}° ${min.toFixed(1)}' ${isLat ? (val >= 0 ? "N" : "S") : (val >= 0 ? "E" : "W")}`;
+    }
+
+    function updateProjText() {
+        let txt = "150°W (Pacific)";
+        if (state.projectionCenter === 0) txt = "0° (Greenwich)";
+        if (state.projectionCenter === 180) txt = "180° (Date Line)";
+        document.getElementById('btn-center').textContent = `Center: ${state.projectionCenter}°`;
+        document.getElementById('proj-disp').textContent = txt;
+    }
+
+    function drawGrid(degH, degW, topLat, leftLon) {
+        ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 1;
+        ctx.font = "11px monospace"; ctx.fillStyle = "rgba(255,255,255,0.6)";
+        let step = degH < 1 ? 0.5 : (degH < 5 ? 1 : (degH < 20 ? 5 : 10));
+        
+        const sLat = Math.floor(topLat / step) * step;
+        for (let l = sLat; l > topLat - degH; l -= step) {
+            const p = project(l, leftLon, topLat, leftLon, degH, degW);
+            if (p.y >= 0 && p.y <= canvas.height) {
+                ctx.beginPath(); ctx.moveTo(0, p.y); ctx.lineTo(canvas.width, p.y); ctx.stroke();
+                ctx.fillText(formatCoord(l, true), 6, p.y - 4);
+            }
+        }
+        const sLon = Math.ceil(leftLon / step) * step;
+        for (let l = sLon; l < leftLon + degW; l += step) {
+            const p = project(topLat, l, topLat, leftLon, degH, degW);
+            if (p.x >= 0 && p.x <= canvas.width) {
+                ctx.beginPath(); ctx.moveTo(p.x, 0); ctx.lineTo(p.x, canvas.height); ctx.stroke();
+                ctx.fillText(formatCoord(normalizeLon(l), false), p.x + 4, canvas.height - 8);
+            }
+        }
+    }
+
+    function project(lat, lon, tLat, lLon, dH, dW) {
+        let dl = lon - lLon; while (dl < 0 && dl > -300) dl += 360;
+        return { x: (dl / dW) * canvas.width, y: ((tLat - lat) / dH) * canvas.height };
+    }
+
+    function drawRunOverlay(tLat, lLon, dH, dW) {
+        if (!state.run.start) return;
+        const p1 = project(state.run.start.lat, state.run.start.lon, tLat, lLon, dH, dW);
+        const p2 = state.run.end ? project(state.run.end.lat, state.run.end.lon, tLat, lLon, dH, dW) : p1;
+        ctx.beginPath(); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 4; ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        ctx.beginPath(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.setLineDash([5, 5]); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle="#238636"; ctx.beginPath(); ctx.arc(p1.x, p1.y, 5, 0, Math.PI*2); ctx.fill();
+        if(state.run.step===2){ ctx.fillStyle="#f85149"; ctx.beginPath(); ctx.arc(p2.x, p2.y, 5, 0, Math.PI*2); ctx.fill(); }
+    }
+
+    function drawScaleBar(degH) {
+        const pxPerNM = (canvas.height / degH) / 60, w = 100 * pxPerNM;
+        const x = 20, y = canvas.height - 40;
+        ctx.fillStyle = "white"; ctx.fillRect(x, y, w, 2); ctx.fillRect(x, y-5, 2, 7); ctx.fillRect(x+w, y-5, 2, 7);
+        ctx.font = "12px monospace"; ctx.fillText("100 NM", x+5, y-8);
+    }
+
+    function updateProfileGraph() {
+        if (state.run.step !== 2) return;
+        const w = profileCanvas.width, h = profileCanvas.height;
+        profileCtx.clearRect(0, 0, w, h);
+        const sLat=state.run.start.lat, sLon=state.run.start.lon, eLat=state.run.end.lat, eLon=state.run.end.lon;
+        const R=6371e3, φ1=sLat*Math.PI/180, φ2=eLat*Math.PI/180, Δφ=(eLat-sLat)*Math.PI/180, Δλ=(eLon-sLon)*Math.PI/180;
+        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+        const distNM = (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) / 1852;
+
+        const samples=50, temps=[]; let sum=0, valid=0, minT=100, maxT=-100;
+        for(let i=0; i<=samples; i++) {
+            const pct = i/samples;
+            const val = getTempAtLatLon(sLat+(eLat-sLat)*pct, sLon+(eLon-sLon)*pct);
+            let t = (typeof val === 'number') ? val : (val === "ICE" ? -1.8 : null);
+            temps.push(t);
+            if(t !== null) { sum+=t; valid++; if(t<minT)minT=t; if(t>maxT)maxT=t; }
+        }
+
+        if (valid > 0) {
+            document.getElementById('profile-stats').textContent = `Dist: ${distNM.toFixed(1)} NM | Avg: ${(sum/valid).toFixed(1)}°C`;
+            minT=Math.floor(minT)-1; maxT=Math.ceil(maxT)+1; const range=maxT-minT;
+            profileCtx.beginPath(); profileCtx.strokeStyle = "#58a6ff"; profileCtx.lineWidth = 2;
+            let first=true;
+            for(let i=0; i<=samples; i++) {
+                if(temps[i]===null) continue;
+                const x=(i/samples)*w, y=h-((temps[i]-minT)/range)*h;
+                if(first){ profileCtx.moveTo(x, y); first=false; } else profileCtx.lineTo(x, y);
+            }
+            profileCtx.stroke();
+            profileCtx.fillStyle="rgba(255,255,255,0.5)"; profileCtx.font="10px monospace";
+            profileCtx.fillText(`${maxT}°`, 2, 10); profileCtx.fillText(`${minT}°`, 2, h-2);
+        } else {
+            document.getElementById('profile-stats').textContent = "No Data On Path";
+        }
+    }
+    
+    function clearRun() {
+        state.run.active=false; state.run.step=0; state.run.start=null; state.run.end=null;
+        document.getElementById('btn-clear-run').style.display='none';
+        document.getElementById('profile-panel').style.display='none';
+        requestAnimationFrame(renderLoop);
+    }
+
+    // Boot
+    window.onload = init;
+</script>
+</body>
+</html>

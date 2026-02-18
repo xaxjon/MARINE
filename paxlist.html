@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IMO Passenger List Generator</title>
+    <style>
+        /* General Page Styles */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        
+        /* Control Section */
+        .controls {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .controls textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .controls-top-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .controls button, .controls input[type="file"] {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            font-size: 14px;
+        }
+        .controls button:hover {
+            background-color: #0056b3;
+        }
+        .controls #clearButton {
+            background-color: #dc3545;
+        }
+        .controls #clearButton:hover {
+            background-color: #a71d2a;
+        }
+        .controls-inputs {
+            margin-left: auto;
+            display: flex;
+            gap: 10px;
+        }
+        .controls-inputs input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .controls #searchInput {
+            width: 250px;
+        }
+
+        /* IMO Form Styles */
+        #imoForm {
+            background-color: #fff;
+            padding: 20px;
+            border: 1px solid #000;
+        }
+        .form-header {
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+        }
+        .form-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px; /* Smaller font for landscape */
+        }
+        .form-table th, .form-table td {
+            border: 1px solid #000;
+            padding: 2px; /* Reduced padding for inputs */
+            text-align: left;
+            vertical-align: top;
+        }
+        .form-table th {
+            background-color: #eee;
+            font-weight: bold;
+            padding: 5px;
+        }
+        
+        /* Input fields within the form */
+        .form-input {
+            width: 95%;
+            border: none;
+            border-bottom: 1px dotted #000;
+            font-size: 10px;
+            padding: 2px;
+        }
+        /* UPDATED style for all editable inputs */
+        .form-table .editable-input {
+            width: 100%;
+            border: none;
+            font-size: 10px;
+            padding: 3px;
+            box-sizing: border-box; /* Ensures padding doesn't break layout */
+        }
+        .form-table .transit-input {
+            width: 100%;
+            min-width: 30px;
+            border: none;
+            font-size: 10px;
+            padding: 3px;
+            box-sizing: border-box;
+        }
+
+
+        /* Print-Specific Styles */
+        @media print {
+            /* Hide controls when printing */
+            body {
+                margin: 0;
+                background-color: #fff;
+            }
+            .controls {
+                display: none;
+            }
+            h1 {
+                display: none;
+            }
+            #imoForm {
+                border: none;
+                box-shadow: none;
+                padding: 0;
+            }
+            
+            /* Remove borders from form inputs and make background transparent */
+            .form-input, .editable-input, .transit-input {
+                border: none;
+                box-shadow: none;
+                padding: 2px 0;
+                background-color: transparent;
+                /* This part is tricky: print-color-adjust is non-standard but helps */
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact; 
+            }
+            
+            /* Ensure text from input shows */
+            .form-input, .editable-input, .transit-input {
+                color: #000;
+            }
+
+            /* Force Landscape */
+            @page {
+                size: landscape;
+                margin: 0.5in;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>IMO Passenger List Generator (FAL Form 6)</h1>
+
+    <div class="controls">
+        <div class="controls-top-row">
+            <button id="processButton">Process Pasted Data</button>
+            <input type="file" id="fileInput" accept=".csv">
+            <button id="clearButton">Clear List</button>
+            <div class="controls-inputs">
+                <input type="text" id="defaultEmbark" placeholder="Default Embarkation Port...">
+                <input type="text" id="defaultDisembark" placeholder="Default Disembarkation Port...">
+                <input type="text" id="searchInput" placeholder="Search list...">
+            </div>
+        </div>
+        <textarea id="pasteData" placeholder="Paste your CSV passenger data here..."></textarea>
+    </div>
+
+    <div id="imoForm">
+        <div class="form-header">
+            PASSENGER LIST (IMO FAL Form 6)
+        </div>
+        <table class="form-table">
+            <thead>
+                <tr>
+                    <td colspan="5">1. Name of ship: <input type="text" class="form-input"></td>
+                    <td colspan="2">2. IMO No.: <input type="text" class="form-input"></td>
+                    <td colspan="3">3. Call Sign: <input type="text" class="form-input"></td>
+                </tr>
+                <tr>
+                    <td colspan="5">4. Port of arrival/departure: <input type="text" class="form-input"></td>
+                    <td colspan="2">5. Date of arrival/departure: <input type="text" class="form-input" type="date"></td>
+                    <td colspan="3">6. Flag State of ship: <input type="text" class="form-input"></td>
+                </tr>
+                <tr>
+                    <th>No.</th>
+                    <th>Family name</th>
+                    <th>Given names</th>
+                    <th>Nationality</th>
+                    <th>Date of birth</th>
+                    <th>Place of birth</th>
+                    <th>Identity document (Type, No., Expiry)</th>
+                    <th>Port of embarkation</th>
+                    <th>Port of disembarkation</th>
+                    <th>Transit passenger (Y/N)</th>
+                </tr>
+            </thead>
+            <tbody id="passengerListBody">
+                </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="5">7. Date of issue: <input type="text" class="form-input" type="date"></td>
+                    <td colspan="5">8. Signature and rank of master, authorized agent or officer: <input type="text" class="form-input"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <script>
+        // --- Country Lookup Table ---
+        const countryLookup = {
+            // Europe
+            "ALB": "Albania", "AND": "Andorra", "AUT": "Austria", "BEL": "Belgium", "BGR": "Bulgaria",
+            "BLR": "Belarus", "CHE": "Switzerland", "CYP": "Cyprus", "CZE": "Czech Republic", "DEU": "Germany",
+            "DNK": "Denmark", "ESP": "Spain", "EST": "Estonia", "FIN": "Finland", "FRA": "France",
+            "FRO": "Faroe Islands", "GBR": "United Kingdom", "GEO": "Georgia", "GRC": "Greece", "HRV": "Croatia",
+            "HUN": "Hungary", "IRL": "Ireland", "ISL": "Iceland", "ITA": "Italy", "LIE": "Liechtenstein",
+            "LTU": "Lithuania", "LUX": "Luxembourg", "LVA": "Latvia", "MCO": "Monaco", "MDA": "Moldova",
+            "MKD": "North Macedonia", "MLT": "Malta", "MNE": "Montenegro", "NLD": "Netherlands", "NOR": "Norway",
+            "POL": "Poland", "PRT": "Portugal", "ROU": "Romania", "RUS": "Russian Federation", "SRB": "Serbia",
+            "SVK": "Slovakia", "SVN": "Slovenia", "SWE": "Sweden", "UKR": "Ukraine", "VAT": "Holy See",
+            
+            // Americas
+            "ARG": "Argentina", "BHS": "Bahamas", "BLZ": "Belize", "BOL": "Bolivia", "BRA": "Brazil",
+            "BRB": "Barbados", "CAN": "Canada", "CHL": "Chile", "COL": "Colombia", "CRI": "Costa Rica",
+            "CUB": "Cuba", "DOM": "Dominican Republic", "ECU": "Ecuador", "GRD": "Grenada", "GTM": "Guatemala",
+            "GUY": "Guyana", "HND": "Honduras", "HTI": "Haiti", "JAM": "Jamaica", "MEX": "Mexico",
+            "NIC": "Nicaragua", "PAN": "Panama", "PER": "Peru", "PRY": "Paraguay", "SLV": "El Salvador",
+            "SUR": "Suriname", "TTO": "Trinidad and Tobago", "URY": "Uruguay", "USA": "United States of America", "VEN": "Venezuela",
+            
+            // Asia
+            "ARE": "United Arab Emirates", "BGD": "Bangladesh", "CHN": "China", "HKG": "Hong Kong", "IDN": "Indonesia",
+            "IND": "India", "IRN": "Iran", "IRQ": "Iraq", "ISR": "Israel", "JPN": "Japan",
+            "KAZ": "Kazakhstan", "KGZ": "Kyrgyzstan", "KHM": "Cambodia", "KOR": "South Korea", "KWT": "Kuwait",
+            "LAO": "Laos", "LKA": "Sri Lanka", "MMR": "Myanmar", "MNG": "Mongolia", "MYS": "Malaysia",
+            "NPL": "Nepal", "OMN": "Oman", "PAK": "Pakistan", "PHL": "Philippines", "PRK": "North Korea",
+            "QAT": "Qatar", "SAU": "Saudi Arabia", "SGP": "Singapore", "SYR": "Syria", "THA": "Thailand",
+            "TJK": "Tajikistan", "TKM": "Turkmenistan", "TUR": "Turkey", "TWN": "Taiwan", "UZB": "Uzbekistan",
+            "VNM": "Vietnam", "YEM": "Yemen",
+
+            // Principal African Countries
+            "DZA": "Algeria", "AGO": "Angola", "CMR": "Cameroon", "COG": "Congo", "CIV": "Côte d'Ivoire",
+            "EGY": "Egypt", "ETH": "Ethiopia", "GHA": "Ghana", "KEN": "Kenya", "LBY": "Libya",
+            "MAR": "Morocco", "MOZ": "Mozambique", "NAM": "Namibia", "NGA": "Nigeria", "SEN": "Senegal",
+            "SOM": "Somalia", "SDN": "Sudan", "TZA": "Tanzania", "TUN": "Tunisia", "UGA": "Uganda",
+            "ZAF": "South Africa", "ZMB": "Zambia", "ZWE": "Zimbabwe"
+        };
+
+
+        // --- Event Listeners ---
+        document.getElementById('processButton').addEventListener('click', () => {
+            const data = document.getElementById('pasteData').value;
+            processData(data);
+        });
+
+        document.getElementById('fileInput').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    processData(e.target.result);
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        document.getElementById('clearButton').addEventListener('click', () => {
+            document.getElementById('passengerListBody').innerHTML = '';
+            document.getElementById('pasteData').value = '';
+        });
+
+        // Search Box Event Listener
+        document.getElementById('searchInput').addEventListener('keyup', filterTable);
+
+
+        // --- Data Processing Function ---
+        function processData(csvText) {
+            const tbody = document.getElementById('passengerListBody');
+            tbody.innerHTML = ''; // Clear existing data
+
+            // Get default port values
+            const defaultEmbark = document.getElementById('defaultEmbark').value;
+            const defaultDisembark = document.getElementById('defaultDisembark').value;
+            
+            const lines = csvText.trim().split('\n');
+            
+            // Skip header row
+            const dataLines = lines.slice(1);
+            
+            let rowNum = 1;
+            
+            for (const line of dataLines) {
+                // Basic CSV split, assumes no commas within fields
+                const cols = line.split(',');
+
+                // Check for a valid line
+                if (cols.length < 9) continue; 
+
+                // --- Map columns from crewED.csv ---
+                const surname = cols[0].trim();
+                const givenNames = cols[1].trim();
+                const passportNo = cols[2].trim();
+                const nationalityCode = cols[3].trim(); // e.g., "RUS"
+                const dob = cols[4].trim();
+                const expiry = cols[6].trim();
+                const docType = cols[8].trim(); // 'P' for Passport
+
+                // --- Look up full country name ---
+                const nationality = countryLookup[nationalityCode] || nationalityCode;
+                
+                // --- Set Place of Birth from Nationality ---
+                const pob = nationality;
+
+                // Format the identity document string
+                const idDocType = (docType === 'P') ? 'Passport' : docType;
+                const idDocString = `${idDocType}, ${passportNo}, Exp: ${expiry}`;
+
+                // --- Create table row ---
+                const row = tbody.insertRow();
+                
+                // Cell 0: No. (Not editable)
+                const cell0 = row.insertCell(0);
+                cell0.textContent = rowNum++;
+                cell0.style.padding = "5px"; // Add padding back to non-input cell
+                cell0.style.textAlign = "center";
+
+                // --- MODIFIED: All cells are now editable inputs ---
+                row.insertCell(1).innerHTML = `<input type="text" class="editable-input" value="${surname}">`;
+                row.insertCell(2).innerHTML = `<input type="text" class="editable-input" value="${givenNames}">`;
+                row.insertCell(3).innerHTML = `<input type="text" class="editable-input" value="${nationality}">`;
+                row.insertCell(4).innerHTML = `<input type="text" class="editable-input" value="${dob}">`;
+                row.insertCell(5).innerHTML = `<input type="text" class="editable-input" value="${pob}">`;
+                row.insertCell(6).innerHTML = `<input type="text" class="editable-input" value="${idDocString}">`;
+                
+                // --- MODIFIED: Use default port values ---
+                row.insertCell(7).innerHTML = `<input type="text" class="editable-input" value="${defaultEmbark}">`;
+                row.insertCell(8).innerHTML = `<input type="text" class="editable-input" value="${defaultDisembark}">`;
+                
+                // --- MODIFIED: Default transit to "N" ---
+                row.insertCell(9).innerHTML = `<input type="text" class="transit-input" value="N">`;
+            }
+        }
+        
+        // --- Table Filter Function ---
+        function filterTable() {
+            const filter = document.getElementById('searchInput').value.toUpperCase();
+            const tbody = document.getElementById('passengerListBody');
+            const rows = tbody.getElementsByTagName('tr');
+
+            // Loop through all table rows
+            for (let i = 0; i < rows.length; i++) {
+                const cells = rows[i].getElementsByTagName('td');
+                let found = false;
+
+                // Loop through all cells in this row
+                for (let j = 0; j < cells.length; j++) {
+                    const cell = cells[j];
+                    if (cell) {
+                        let cellValue = "";
+                        // Check if cell has an input field
+                        const input = cell.querySelector('input');
+                        if (input) {
+                            cellValue = input.value;
+                        } else {
+                            // This will only catch the "No." column now
+                            cellValue = cell.textContent || cell.innerText;
+                        }
+
+                        // Check for match
+                        if (cellValue.toUpperCase().indexOf(filter) > -1) {
+                            found = true;
+                            break; // Stop checking cells in this row
+                        }
+                    }
+                }
+
+                // Show or hide the row
+                if (found) {
+                    rows[i].style.display = "";
+                } else {
+                    rows[i].style.display = "none";
+                }
+            }
+        }
+    </script>
+
+</body>
+</html>
