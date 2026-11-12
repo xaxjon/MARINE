@@ -337,6 +337,52 @@
             }
         }
 
+        // --- Grid Response Cache ---
+        // Open-Meteo counts quota per location, so one chart costs ~400 calls.
+        // Caching the raw hourly grid for an hour makes re-renders, offset changes
+        // (H+0/12/24) and surface/rain switches effectively free.
+        const weatherCache = new Map(); // session cache
+        const WEATHER_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // synoptic charts: model runs update every 1-6h
+
+        // Each dataset has a distinct variable set, so it gets its own cache entry.
+        // A 'rain' grid is a superset of 'sfc' and can also serve surface charts.
+        function gridDataset(productType) {
+            if (productType === '500hpa') return '500hpa';
+            if (productType === 'rain') return 'rain';
+            return 'sfc';
+        }
+
+        function gridCacheKey(dataset, centerLat, centerLon, radiusDeg) {
+            return `${dataset}_${centerLat.toFixed(1)}_${centerLon.toFixed(1)}_${radiusDeg}`;
+        }
+
+        function readWeatherCache(keys) {
+            const now = Date.now();
+            for (const key of keys) {
+                const mem = weatherCache.get(key);
+                if (mem && now - mem.fetchedAt < WEATHER_CACHE_TTL_MS) {
+                    return { key, data: mem.data };
+                }
+                try {
+                    const stored = JSON.parse(localStorage.getItem('wx_' + key));
+                    if (stored && now - stored.fetchedAt < WEATHER_CACHE_TTL_MS) {
+                        weatherCache.set(key, stored);
+                        return { key, data: stored.data };
+                    }
+                    localStorage.removeItem('wx_' + key);
+                } catch (e) { /* corrupted entry - refetch */ }
+            }
+            return null;
+        }
+
+        function writeWeatherCache(key, data) {
+            const entry = { fetchedAt: Date.now(), data };
+            weatherCache.set(key, entry);
+            try {
+                localStorage.setItem('wx_' + key, JSON.stringify(entry));
+            } catch (e) { /* storage full - session cache still works */ }
+        }
+
         /**
          * Fetches weather data in batches to avoid URL length limits.
          * @param {string} productType - 'surface', 'rain' or '500hpa'
@@ -344,13 +390,16 @@
          */
         async function fetchWeatherData(centerLat, centerLon, radiusDeg, productType, hourOffset) {
             // 1. Determine Dynamic Resolution
-            // Target: ≤400 points to stay in 1-2 batches and avoid rate limits
+            // Open-Meteo quota is counted per location (x variables x days), so point
+            // count is the dominant cost. Synoptic-scale fax charts only resolve large
+            // features, and the interpolation/smoothing passes rebuild smooth fields,
+            // so a coarse input grid is sufficient. Target: <=200 points per chart.
             if (radiusDeg <= 30) {
-                FETCH_RES = 4.0; // ~240nm — was 3.0 (784pts → ~400pts, 4 batches → 2)
+                FETCH_RES = 6.0; // ~360nm — ~196 pts for a 30deg range (was 4.0 -> ~400 pts)
             } else if (radiusDeg <= 60) {
-                FETCH_RES = 8.0; // ~480nm — was 7.0
+                FETCH_RES = 12.0; // ~720nm — ~169 pts (was 8.0 -> ~324 pts)
             } else {
-                FETCH_RES = 10.0; // ~600nm — was 8.0
+                FETCH_RES = 15.0; // ~900nm (was 10.0)
             }
             
             console.log(`Fetch Resolution: ${FETCH_RES}° based on range ${radiusDeg}`);
@@ -402,33 +451,55 @@
 
             console.log(`Generated ${coords.length} points. Processing in ${chunks.length} batch(es).`);
 
-            // Select variables
+            // Select variables — request only what the product actually renders,
+            // since quota scales with variable count. Precipitation is only drawn
+            // on rain charts, and 500hPa needs only height + wind.
+            const dataset = gridDataset(productType);
             let variables = "";
-            if (productType === '500hpa') {
+            if (dataset === '500hpa') {
                 variables = "geopotential_height_500hPa,wind_speed_500hPa,wind_direction_500hPa";
-            } else {
+            } else if (dataset === 'rain') {
                 variables = "pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m,precipitation";
+            } else {
+                variables = "pressure_msl,cloud_cover,wind_speed_10m,wind_direction_10m";
             }
 
             // 5. Fetch Batches Sequentially (Throttled to prevent 429 Errors)
-            const combinedData = [];
+            //    We only ever draw ONE hour, so request exactly that timestamp
+            //    (start_hour == end_hour) instead of a multi-day series.
+            const targetIso = new Date(Date.now() + hourOffset * 3600 * 1000)
+                .toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+            // Cache key includes the target hour: each chart is a distinct dataset
+            const cacheKey = gridCacheKey(dataset, centerLat, centerLon, radiusDeg) + '_' + targetIso;
+            // A rain grid is a superset of sfc, so surface charts may reuse it
+            const keysToTry = dataset === 'sfc'
+                ? [cacheKey, gridCacheKey('rain', centerLat, centerLon, radiusDeg) + '_' + targetIso]
+                : [cacheKey];
+            const cacheHit = readWeatherCache(keysToTry);
+            const combinedData = cacheHit ? cacheHit.data : [];
             const MAX_RETRIES = 3;
-            
+
+            if (cacheHit) {
+                console.log(`Using cached grid (${cacheHit.data.length} points, key ${cacheHit.key}).`);
+            }
+
             try {
+                if (!cacheHit) {
                 // Update loading text to show progress
                 const loadingTextEl = document.querySelector('#loading-overlay .loading-text');
                 const originalText = loadingTextEl ? loadingTextEl.innerText : "ACQUIRING SATELLITE DATA...";
 
                 for (let i = 0; i < chunks.length; i++) {
                     const chunk = chunks[i];
-                    
+
                     if(loadingTextEl) {
                         loadingTextEl.innerText = `DOWNLOADING PACKET ${i+1}/${chunks.length}...`;
                     }
 
                     const latStr = chunk.map(c => c.lat.toFixed(2)).join(',');
                     const lonStr = chunk.map(c => c.lon.toFixed(2)).join(',');
-                    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latStr}&longitude=${lonStr}&hourly=${variables}&wind_speed_unit=kn&forecast_days=3`;
+                    // Single point in time: one timestamp per location, not a range
+                    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latStr}&longitude=${lonStr}&hourly=${variables}&wind_speed_unit=kn&start_hour=${targetIso}:00&end_hour=${targetIso}:00`;
                     
                     // Retry with exponential backoff
                     let batchResult = null;
@@ -463,22 +534,28 @@
 
                 if(loadingTextEl) loadingTextEl.innerText = originalText;
 
-                // 6. Process Time & Structure
-                const now = new Date();
-                const currentHour = now.getUTCHours();
-                let targetIdx = currentHour + hourOffset;
-                let validTimeString = now.toUTCString();
+                writeWeatherCache(cacheKey, combinedData);
+                } // end if (!cacheHit)
 
-                // Bounds-check targetIdx against actual array length
+                // 6. Process Time & Structure
+                // The request asked for a single timestamp, so each location has
+                // exactly one hourly entry. Find it by matching targetIso (index 0
+                // in practice) so cached grids stay correct too.
+                const now = new Date();
+                let targetIdx = 0;
+                let validTimeString = new Date(targetIso + ":00Z").toUTCString().replace("GMT", "Z");
+
                 const firstHourly = combinedData.find(d => d && d.hourly && d.hourly.time);
                 if (firstHourly) {
-                    const maxIdx = firstHourly.hourly.time.length - 1;
-                    if (targetIdx > maxIdx) {
-                        console.warn(`targetIdx ${targetIdx} exceeds hourly array length ${maxIdx + 1}, clamping.`);
-                        targetIdx = maxIdx;
+                    const timeArr = firstHourly.hourly.time;
+                    const foundIdx = timeArr.findIndex(t => t.slice(0, 13) === targetIso);
+                    if (foundIdx !== -1) {
+                        targetIdx = foundIdx;
+                    } else {
+                        console.warn(`Target hour ${targetIso} not in response (${timeArr.length} entries), using first.`);
                     }
-                    if (firstHourly.hourly.time[targetIdx]) {
-                        const isoTime = firstHourly.hourly.time[targetIdx] + "Z";
+                    if (timeArr[targetIdx]) {
+                        const isoTime = timeArr[targetIdx] + "Z";
                         validTimeString = new Date(isoTime).toUTCString().replace("GMT", "Z");
                     }
                 }
